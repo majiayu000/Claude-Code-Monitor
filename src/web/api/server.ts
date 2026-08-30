@@ -11,11 +11,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { runMigrations } from '../../db/migrations.js';
 import { syncSessions } from '../../services/session.service.js';
-import {
-  getAggregatedSessionsBasic,
-  getPersistedSessionsBasic,
-  getSessionStats,
-} from '../../services/session.aggregator.js';
+import { getSessionStats } from '../../services/session.aggregator.js';
 import { initPricing } from '../../services/usage.pricing.js';
 import { initializeMemoryService } from '../../services/memory.service.js';
 import { logger } from '../../lib/logger.js';
@@ -45,7 +41,11 @@ import {
 } from './realtime-updates.js';
 import { isAllowedTerminalOrigin } from './terminal-security.js';
 import { isAllowedRequestHost } from './request-security.js';
-import { getWebSessionSource, setWebSessionSource } from './session-source.js';
+import {
+  getWebSessionsBasic,
+  getWebSessionSource,
+  setWebSessionSource,
+} from './session-source.js';
 
 const app = new Hono();
 
@@ -184,9 +184,7 @@ async function checkAndBroadcastUpdates() {
       await syncSessions();
       lastRealtimeFullSyncAt = Date.now();
     }
-    const sessions = getWebSessionSource() === 'service'
-      ? getPersistedSessionsBasic()
-      : getAggregatedSessionsBasic();
+    const sessions = getWebSessionsBasic();
     const stats = getSessionStats(sessions);
 
     const currentState = JSON.stringify({

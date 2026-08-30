@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { getAggregatedSessions } from '../../../services/session.aggregator.js';
 import {
   buildAttentionOverview,
   MAX_ATTENTION_LIMIT,
@@ -24,6 +23,7 @@ import {
 } from '../../../domain/orchestrator/index.js';
 import { logger } from '../../../lib/logger.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getWebSessions } from '../session-source.js';
 
 const app = new Hono();
 app.use('*', authMiddleware);
@@ -50,7 +50,7 @@ app.get('/overview', (c) => {
   }
 
   try {
-    const sessions = getAggregatedSessions();
+    const sessions = getWebSessions();
     const overview = buildAttentionOverview(sessions, {
       includeCompleted: c.req.query('includeCompleted') === 'true',
       includeOldLost: c.req.query('includeOldLost') === 'true',
@@ -102,7 +102,7 @@ app.post('/digests/generate', async (c) => {
   const sessionId = typeof body.sessionId === 'string' && body.sessionId.trim()
     ? body.sessionId.trim()
     : undefined;
-  const sessions = getAggregatedSessions();
+  const sessions = getWebSessions();
   const matchingSessions = sessionId
     ? sessions.filter((session) => session.sessionId === sessionId)
     : sessions;

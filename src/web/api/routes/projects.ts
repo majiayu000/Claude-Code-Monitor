@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { getAggregatedSessions } from '../../../services/session.aggregator.js';
 import {
   aggregateProjectSummaries,
   getProjectOverviewStats,
@@ -8,6 +7,7 @@ import { logger } from '../../../lib/logger.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { serializeProjectSummaries } from '../project-response.js';
 import { getRuntimeScanStatus } from '../../../services/runtime-status.js';
+import { getWebSessions } from '../session-source.js';
 
 const app = new Hono();
 app.use('*', authMiddleware);
@@ -15,7 +15,7 @@ app.use('*', authMiddleware);
 app.get('/', async (c) => {
   try {
     const fields = c.req.query('fields') || 'basic';
-    const sessions = getAggregatedSessions();
+    const sessions = getWebSessions();
     const projects = aggregateProjectSummaries(sessions);
 
     return c.json({

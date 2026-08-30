@@ -6,13 +6,7 @@
 
 import { Hono } from 'hono';
 import { syncSessions, getAllSessions } from '../../../services/session.service.js';
-import {
-  getAggregatedSessions,
-  getAggregatedSessionsBasic,
-  getPersistedSessions,
-  getPersistedSessionsBasic,
-  getSessionStats,
-} from '../../../services/session.aggregator.js';
+import { getSessionStats } from '../../../services/session.aggregator.js';
 import { isProcessRunning } from '../../../adapters/process/scanner.js';
 import {
   getSessionById as getClaudeSessionById,
@@ -32,7 +26,11 @@ import {
   parseRuntimeFilter,
   runtimeIdForClient,
 } from '../../../services/runtime-status.js';
-import { getWebSessionSource } from '../session-source.js';
+import {
+  getWebSessions,
+  getWebSessionsBasic,
+  getWebSessionSource,
+} from '../session-source.js';
 
 const app = new Hono();
 app.use('*', authMiddleware);
@@ -197,12 +195,11 @@ app.get('/', async (c) => {
     }
 
     // Return data immediately from database (fast)
-    const serviceBacked = getWebSessionSource() === 'service';
     let sessions = query.trim()
-      ? (serviceBacked ? getPersistedSessions() : getAggregatedSessions())
+      ? getWebSessions()
       : fields === 'basic'
-      ? (serviceBacked ? getPersistedSessionsBasic() : getAggregatedSessionsBasic())
-      : (serviceBacked ? getPersistedSessions() : getAggregatedSessions());
+      ? getWebSessionsBasic()
+      : getWebSessions();
     if (projectRoot || projectId) {
       sessions = sessions.filter(s => matchesProjectFilter(s, { projectRoot, projectId }));
     }
