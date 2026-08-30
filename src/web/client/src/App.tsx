@@ -32,7 +32,7 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
   const { showToast } = useToast()
   const { theme, setTheme } = useTheme()
   const [showHelp, setShowHelp] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabId>('sessions')
+  const [activeTab, setActiveTab] = useState<TabId>('overview')
   const [selectedProjectRoot, setSelectedProjectRoot] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilters, setStatusFilters] = useState<Set<SessionStatus>>(new Set())
@@ -255,7 +255,7 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
         <UsagePanel />
       )}
 
-      {activeTab === 'orchestrator' && !loading && (
+      {(activeTab === 'overview' || activeTab === 'orchestrator') && !loading && (
         <OrchestratorPanel
           token={token}
           onOpenSession={handleOpenOrchestratorSession}

@@ -60,6 +60,11 @@ export interface WorkboardItemProjection {
   waitingOnSession?: WorkboardAgentSessionSummary
   acceptedSessions: WorkboardAgentSessionSummary[]
   suggestions: WorkboardSuggestion[]
+  completionSuggestion?: {
+    evidenceId: string
+    summary: string
+    occurredAt: string
+  }
 }
 
 export interface WorkboardData {

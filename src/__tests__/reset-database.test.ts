@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { queryOne, runSql, closeDatabase } from '../infrastructure/database/sqlite.js';
@@ -47,31 +47,6 @@ describe('resetDatabase', () => {
     expect(queryOne<{ timeout: number }>('PRAGMA busy_timeout')?.timeout).toBe(5000);
   });
 
-  test('honors KEEPLINE_HOME changes made after module import', () => {
-    const previousHome = process.env.KEEPLINE_HOME;
-    const home = mkdtempSync(join(tmpdir(), 'keepline-runtime-db-home-'));
-
-    try {
-      closeDatabase();
-      process.env.KEEPLINE_HOME = home;
-
-      resetDatabase();
-
-      expect(existsSync(join(home, 'keepline.db'))).toBe(true);
-      expect((queryOne<{ count: number }>(
-        'SELECT COUNT(*) as count FROM schema_migrations'
-      )?.count ?? 0)).toBeGreaterThan(0);
-    } finally {
-      closeDatabase();
-      if (previousHome === undefined) {
-        delete process.env.KEEPLINE_HOME;
-      } else {
-        process.env.KEEPLINE_HOME = previousHome;
-      }
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
-
   test('drops optional events table during reset', () => {
     runSql(`
       CREATE TABLE IF NOT EXISTS events (
@@ -92,5 +67,44 @@ describe('resetDatabase', () => {
     expect(queryOne<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'events'"
     ) ?? undefined).toBeUndefined();
+  });
+
+  test('refuses non-test, symlinked, and marker-mismatched reset targets', () => {
+    const isolatedHome = process.env.KEEPLINE_HOME;
+    const isolatedTestHome = process.env.KEEPLINE_TEST_HOME;
+    const isolatedMarker = process.env.KEEPLINE_TEST_ISOLATED;
+    if (!isolatedHome || !isolatedTestHome || isolatedMarker !== '1') {
+      throw new Error('Keepline test preload did not establish an isolated home');
+    }
+    const fakePersistentRoot = mkdtempSync(join(tmpdir(), 'keepline-persistent-fixture-'));
+    const fakePersistentHome = join(fakePersistentRoot, 'data');
+    const mismatchHome = mkdtempSync(join(tmpdir(), 'keepline-test-mismatch-'));
+    mkdirSync(fakePersistentHome);
+    try {
+      process.env.KEEPLINE_HOME = fakePersistentHome;
+      expect(() => resetDatabase()).toThrow('Refusing to reset non-isolated Keepline database');
+
+      const symlinkHome = join(isolatedTestHome, 'persistent-link');
+      symlinkSync(fakePersistentHome, symlinkHome);
+      process.env.KEEPLINE_HOME = symlinkHome;
+      expect(() => resetDatabase()).toThrow('Refusing to reset non-isolated Keepline database');
+
+      process.env.KEEPLINE_HOME = isolatedHome;
+      delete process.env.KEEPLINE_TEST_ISOLATED;
+      expect(() => resetDatabase()).toThrow('Refusing to reset non-isolated Keepline database');
+
+      process.env.KEEPLINE_TEST_ISOLATED = isolatedMarker;
+      process.env.KEEPLINE_TEST_HOME = mismatchHome;
+      expect(() => resetDatabase()).toThrow('Refusing to reset non-isolated Keepline database');
+    } finally {
+      if (isolatedHome === undefined) delete process.env.KEEPLINE_HOME;
+      else process.env.KEEPLINE_HOME = isolatedHome;
+      if (isolatedTestHome === undefined) delete process.env.KEEPLINE_TEST_HOME;
+      else process.env.KEEPLINE_TEST_HOME = isolatedTestHome;
+      if (isolatedMarker === undefined) delete process.env.KEEPLINE_TEST_ISOLATED;
+      else process.env.KEEPLINE_TEST_ISOLATED = isolatedMarker;
+      rmSync(fakePersistentRoot, { recursive: true, force: true });
+      rmSync(mismatchHome, { recursive: true, force: true });
+    }
   });
 });

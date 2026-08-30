@@ -13,6 +13,7 @@ import { runMigrations } from '../../db/migrations.js';
 import { syncSessions } from '../../services/session.service.js';
 import {
   getAggregatedSessionsBasic,
+  getPersistedSessionsBasic,
   getSessionStats,
 } from '../../services/session.aggregator.js';
 import { initPricing } from '../../services/usage.pricing.js';
@@ -44,6 +45,7 @@ import {
 } from './realtime-updates.js';
 import { isAllowedTerminalOrigin } from './terminal-security.js';
 import { isAllowedRequestHost } from './request-security.js';
+import { getWebSessionSource, setWebSessionSource } from './session-source.js';
 
 const app = new Hono();
 
@@ -137,16 +139,54 @@ app.get('/*', async (c) => {
 // Session state tracking for real-time updates
 let previousSessionsState: string = '';
 let lastRealtimeFullSyncAt = 0;
+type ServiceProbe = (
+  input: string | URL | Request,
+  init?: RequestInit
+) => Promise<Response>;
+
+interface WebServerOptions {
+  serviceURL?: string;
+  serviceProbe?: ServiceProbe;
+}
+
+export async function hasCompatibleService(
+  webPort: number,
+  serviceURL: string = 'http://127.0.0.1:3377',
+  serviceProbe: ServiceProbe = fetch
+): Promise<boolean> {
+  try {
+    const url = new URL('/api/v1/health', serviceURL);
+    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname.toLowerCase())) {
+      return false;
+    }
+    if (Number(url.port || (url.protocol === 'https:' ? 443 : 80)) === webPort) {
+      return false;
+    }
+    const response = await serviceProbe(url, { signal: AbortSignal.timeout(750) });
+    if (!response.ok) return false;
+    const payload = await response.json() as {
+      success?: boolean;
+      data?: { status?: string; mode?: string };
+    };
+    return payload.success === true && payload.data?.status === 'ok' &&
+      payload.data.mode === 'service';
+  } catch {
+    return false;
+  }
+}
 
 async function checkAndBroadcastUpdates() {
   try {
     if (wsClients.size === 0) return; // No clients, skip
     const now = Date.now();
-    if (shouldRunRealtimeFullSync(lastRealtimeFullSyncAt, now, REALTIME_FULL_SYNC_INTERVAL_MS)) {
+    if (getWebSessionSource() === 'standalone' &&
+        shouldRunRealtimeFullSync(lastRealtimeFullSyncAt, now, REALTIME_FULL_SYNC_INTERVAL_MS)) {
       await syncSessions();
       lastRealtimeFullSyncAt = Date.now();
     }
-    const sessions = getAggregatedSessionsBasic();
+    const sessions = getWebSessionSource() === 'service'
+      ? getPersistedSessionsBasic()
+      : getAggregatedSessionsBasic();
     const stats = getSessionStats(sessions);
 
     const currentState = JSON.stringify({
@@ -180,7 +220,10 @@ async function checkAndBroadcastUpdates() {
   }
 }
 
-export async function startWebServer(port: number = config.get().webPort) {
+export async function startWebServer(
+  port: number = config.get().webPort,
+  options: WebServerOptions = {}
+) {
   runMigrations();
 
   // Initialize memory service for auto-tracking
@@ -190,10 +233,21 @@ export async function startWebServer(port: number = config.get().webPort) {
   logger.info('Fetching model pricing from LiteLLM...');
   await initPricing();
 
-  // Initial sync on startup (so database has data for first request)
-  logger.info('Running initial session sync...');
-  await syncSessions();
-  lastRealtimeFullSyncAt = Date.now();
+  const serviceURL = options.serviceURL ??
+    process.env.KEEPLINE_SERVICE_URL ?? 'http://127.0.0.1:3377';
+  setWebSessionSource(
+    await hasCompatibleService(port, serviceURL, options.serviceProbe)
+      ? 'service'
+      : 'standalone'
+  );
+  if (getWebSessionSource() === 'service') {
+    logger.info(`Using Service Mode session snapshot from ${serviceURL}`);
+  } else {
+    // Initial sync on startup (so database has data for first request)
+    logger.info('Running initial session sync...');
+    await syncSessions();
+    lastRealtimeFullSyncAt = Date.now();
+  }
 
   logger.info(`Starting web server on port ${port}`);
 

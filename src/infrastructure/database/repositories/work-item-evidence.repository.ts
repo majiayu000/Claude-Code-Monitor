@@ -126,9 +126,13 @@ export interface IWorkItemEvidenceRepository {
   findAgentSessionById(id: string): AgentSession | null;
   createSessionLink(input: WorkItemSessionLinkCreateInput): WorkItemSessionLink;
   acceptSessionLink(id: string): WorkItemSessionLink | null;
+  rejectSessionLink(id: string): WorkItemSessionLink | null;
   findSessionLinkById(id: string): WorkItemSessionLink | null;
   createProgressEvidence(input: ProgressEvidenceCreateInput): ProgressEvidence;
   findEvidenceById(id: string): ProgressEvidence | null;
+  findLatestExplicitCompletionForAgentSession(agentSessionId: string): ProgressEvidence | null;
+  findAcceptedLinkedAgentSessions(): AgentSession[];
+  findCanonicalCompletionEvidence(agentSessionId: string, completedAt: Date): ProgressEvidence | null;
   findProjectionDataForWorkItems(workItemIds: string[]): WorkItemEvidenceProjectionData;
 }
 
@@ -241,6 +245,18 @@ class WorkItemEvidenceRepository implements IWorkItemEvidenceRepository {
     return this.findSessionLinkById(id);
   }
 
+  rejectSessionLink(id: string): WorkItemSessionLink | null {
+    const existing = this.findSessionLinkById(id);
+    if (!existing) return null;
+    const now = new Date().toISOString();
+    getDatabase().prepare(`
+      UPDATE work_item_session_links
+      SET acceptance_status = 'rejected', accepted_at = NULL, updated_at = ?
+      WHERE id = ?
+    `).run(now, id);
+    return this.findSessionLinkById(id);
+  }
+
   findSessionLinkById(id: string): WorkItemSessionLink | null {
     const db = getDatabase();
     const row = db.prepare('SELECT * FROM work_item_session_links WHERE id = ?')
@@ -298,6 +314,50 @@ class WorkItemEvidenceRepository implements IWorkItemEvidenceRepository {
     const row = db.prepare('SELECT * FROM progress_evidence WHERE id = ?')
       .get(id) as ProgressEvidenceRow | undefined;
     return row ? rowToProgressEvidence(row) : null;
+  }
+
+  findLatestExplicitCompletionForAgentSession(agentSessionId: string): ProgressEvidence | null {
+    const row = getDatabase().prepare(`
+      SELECT * FROM progress_evidence
+      WHERE agent_session_id = ? AND outcome = 'completed' AND confidence = 'explicit'
+      ORDER BY occurred_at DESC, created_at DESC
+      LIMIT 1
+    `).get(agentSessionId) as ProgressEvidenceRow | undefined;
+    return row ? rowToProgressEvidence(row) : null;
+  }
+
+  findAcceptedLinkedAgentSessions(): AgentSession[] {
+    const rows = getDatabase().prepare(`
+      SELECT DISTINCT agent_sessions.*
+      FROM agent_sessions
+      INNER JOIN work_item_session_links
+        ON work_item_session_links.agent_session_id = agent_sessions.id
+      WHERE work_item_session_links.acceptance_status = 'accepted'
+      ORDER BY agent_sessions.last_active_at DESC
+    `).all() as AgentSessionRow[];
+    return rows.map(rowToAgentSession);
+  }
+
+  findCanonicalCompletionEvidence(
+    agentSessionId: string,
+    completedAt: Date
+  ): ProgressEvidence | null {
+    const rows = getDatabase().prepare(`
+      SELECT * FROM progress_evidence
+      WHERE agent_session_id = ?
+        AND outcome = 'completed'
+        AND confidence = 'explicit'
+      ORDER BY occurred_at DESC, created_at DESC
+    `).all(agentSessionId) as ProgressEvidenceRow[];
+    const completedAtIso = completedAt.toISOString();
+    for (const row of rows) {
+      const evidence = rowToProgressEvidence(row);
+      if (evidence.metadata?.source === 'canonical_session_completed' &&
+          evidence.metadata.completedAt === completedAtIso) {
+        return evidence;
+      }
+    }
+    return null;
   }
 
   findProjectionDataForWorkItems(workItemIds: string[]): WorkItemEvidenceProjectionData {

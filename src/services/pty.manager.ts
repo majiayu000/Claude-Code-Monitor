@@ -3,14 +3,14 @@
  *
  * Manages pseudo-terminal sessions with scrollback buffer,
  * detach/reattach support, and lifecycle tracking.
- * Uses bun-pty (native Bun PTY binding) instead of node-pty.
+ * Uses Bun's built-in PTY implementation, avoiding a separately published
+ * native dynamic library.
  */
 
 import { randomUUID } from 'crypto';
 import { existsSync, realpathSync, statSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
-import { spawn as spawnPty } from 'bun-pty';
 import { runSql } from '../infrastructure/database/sqlite.js';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
@@ -27,6 +27,86 @@ interface IPty {
   write: (data: string) => void;
   resize: (cols: number, rows: number) => void;
   kill: (signal?: string) => void;
+}
+
+interface BunPtyOptions {
+  name: string;
+  cols: number;
+  rows: number;
+  cwd: string;
+  env: Record<string, string>;
+}
+
+function spawnBunPty(file: string, args: string[], options: BunPtyOptions): IPty {
+  const dataListeners = new Set<(data: string) => void>();
+  const exitListeners = new Set<(event: { exitCode: number; signal?: string }) => void>();
+  const decoder = new TextDecoder();
+  let cols = options.cols;
+  let rows = options.rows;
+  let terminal: Bun.Terminal | undefined;
+  let exitEvent: { exitCode: number; signal?: string } | undefined;
+
+  const process = Bun.spawn([file, ...args], {
+    cwd: options.cwd,
+    env: options.env,
+    terminal: {
+      name: options.name,
+      cols,
+      rows,
+      data(_terminal, bytes) {
+        const data = decoder.decode(bytes, { stream: true });
+        if (!data) return;
+        for (const listener of dataListeners) listener(data);
+      },
+    },
+    onExit(_process, exitCode, signalCode, error) {
+      const trailingData = decoder.decode();
+      if (trailingData) {
+        for (const listener of dataListeners) listener(trailingData);
+      }
+      const event = {
+        exitCode: exitCode ?? (error ? 1 : 0),
+        signal: signalCode == null ? undefined : String(signalCode),
+      };
+      exitEvent = event;
+      for (const listener of exitListeners) listener(event);
+      // Closing from inside Bun's onExit callback can delay the callback until
+      // the PTY stream itself closes. Notify lifecycle listeners first and
+      // release the terminal on the next microtask.
+      queueMicrotask(() => terminal?.close());
+    },
+  });
+  terminal = process.terminal;
+  if (!terminal) {
+    process.kill();
+    throw new Error('Bun did not create a pseudo-terminal');
+  }
+
+  return {
+    pid: process.pid,
+    get cols() { return cols; },
+    get rows() { return rows; },
+    onData(callback) {
+      dataListeners.add(callback);
+      return { dispose: () => dataListeners.delete(callback) };
+    },
+    onExit(callback) {
+      exitListeners.add(callback);
+      if (exitEvent) queueMicrotask(() => callback(exitEvent!));
+      return { dispose: () => exitListeners.delete(callback) };
+    },
+    write(data) {
+      terminal?.write(data);
+    },
+    resize(nextCols, nextRows) {
+      cols = nextCols;
+      rows = nextRows;
+      terminal?.resize(nextCols, nextRows);
+    },
+    kill(signal) {
+      process.kill(signal as NodeJS.Signals | undefined);
+    },
+  };
 }
 
 interface ServerWebSocket {
@@ -134,7 +214,7 @@ class PtyManager {
       args = shellParts.slice(1);
     }
 
-    const pty = spawnPty(file, args, {
+    const pty = spawnBunPty(file, args, {
       name: 'xterm-256color',
       cols,
       rows,
@@ -148,7 +228,7 @@ class PtyManager {
         SHELL: process.env.SHELL || '/bin/bash',
         COLORTERM: 'truecolor',
       },
-    }) as unknown as IPty;
+    });
 
     const session: PtySession = {
       id: sessionId,

@@ -45,6 +45,7 @@ export type KeeplineEvents = {
   'daemon:started': { pid: number };
   'daemon:stopped': { reason: string };
   'scan:complete': { sessionCount: number; duration: number };
+  'dispatch:created': { dispatchId: string };
   'error': { error: Error; context: string };
 };
 

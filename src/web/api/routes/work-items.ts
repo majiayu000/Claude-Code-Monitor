@@ -1,9 +1,7 @@
 import { Hono } from 'hono';
-import type { Context } from 'hono';
-import {
-  workItemEvidenceRepository,
-  workItemRepository,
-} from '../../../infrastructure/database/index.js';
+import { taskDispatchRepository } from '../../../infrastructure/database/repositories/task-dispatch.repository.js';
+import { workItemEvidenceRepository } from '../../../infrastructure/database/repositories/work-item-evidence.repository.js';
+import { workItemRepository } from '../../../infrastructure/database/repositories/work-item.repository.js';
 import {
   DEFAULT_WORKBOARD_STALE_WINDOW_HOURS,
   buildWorkboardProjection,
@@ -19,9 +17,11 @@ import {
   type WorkItemStatus,
   type WorkItemStatusSource,
   type WorkItemUpdateInput,
+  type CompletionReviewDecision,
 } from '../../../domain/work-item/index.js';
 import { logger } from '../../../lib/logger.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { readJsonObject } from '../../../local-api/http.js';
 
 const app = new Hono();
 app.use('*', authMiddleware);
@@ -61,6 +61,10 @@ function serializeWorkboardItem(projection: WorkboardItemProjection) {
       agentSession: serializeWorkboardSession(suggestion.agentSession),
       suggestedAt: suggestion.suggestedAt.toISOString(),
     })),
+    completionSuggestion: projection.completionSuggestion ? {
+      ...projection.completionSuggestion,
+      occurredAt: projection.completionSuggestion.occurredAt.toISOString(),
+    } : undefined,
   };
 }
 
@@ -91,24 +95,6 @@ function readString(
     return { error: `${key} must be ${options.maxLength} characters or fewer` };
   }
   return { value: value || undefined };
-}
-
-export async function readJsonObject(c: Context): Promise<{
-  data?: Record<string, unknown>;
-  response?: Response;
-}> {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return { response: c.json({ success: false, error: 'Invalid JSON body' }, 400) };
-  }
-
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { response: c.json({ success: false, error: 'Request body must be an object' }, 400) };
-  }
-
-  return { data: body as Record<string, unknown> };
 }
 
 function parseKind(value: unknown, fallback?: WorkItemKind): { value?: WorkItemKind; error?: string } {
@@ -197,6 +183,9 @@ app.get('/', (c) => {
     const workboard = buildWorkboardProjection({
       items,
       ...evidence,
+      reviews: taskDispatchRepository.findCompletionReviewsForWorkItems(
+        items.map((item) => item.id)
+      ),
       staleWindowHours: staleWindowHours.value,
     });
     return c.json({
@@ -211,6 +200,103 @@ app.get('/', (c) => {
     logger.error('Failed to list work items', error);
     return c.json({ success: false, error: 'Failed to list work items' }, 500);
   }
+});
+
+app.put('/external/:source/:externalId', async (c) => {
+  const source = c.req.param('source').trim();
+  const externalId = c.req.param('externalId').trim();
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(source) || externalId.length === 0 || externalId.length > 200) {
+    return c.json({ success: false, error: 'Invalid external work item identity' }, 400);
+  }
+  const parsedBody = await readJsonObject(c);
+  if (parsedBody.response) return parsedBody.response;
+  const data = parsedBody.data!;
+  const title = readString(data, 'title', { required: true, maxLength: 200 });
+  if (title.error) return c.json({ success: false, error: title.error }, 400);
+  const body = readString(data, 'body', { maxLength: 10000 });
+  if (body.error) return c.json({ success: false, error: body.error }, 400);
+  const projectRoot = readString(data, 'projectRoot', { maxLength: 2048 });
+  if (projectRoot.error) return c.json({ success: false, error: projectRoot.error }, 400);
+  const kind = parseKind(data.kind, 'todo');
+  if (kind.error) return c.json({ success: false, error: kind.error }, 400);
+  const status = parseStatus(data.status, 'planned');
+  if (status.error) return c.json({ success: false, error: status.error }, 400);
+
+  try {
+    const existing = workItemRepository.findByExternalIdentity(source, externalId);
+    const item = existing
+      ? workItemRepository.update(existing.id, {
+          title: title.value!,
+          body: body.value ?? null,
+          projectRoot: projectRoot.value ?? null,
+          kind: kind.value,
+          status: status.value,
+          statusSource: 'user',
+        })!
+      : workItemRepository.create({
+          title: title.value!,
+          body: body.value,
+          projectRoot: projectRoot.value,
+          kind: kind.value,
+          status: status.value,
+          statusSource: 'user',
+          externalSource: source,
+          externalId,
+        });
+    return c.json({ success: true, data: { item: serializeWorkItem(item) } }, existing ? 200 : 201);
+  } catch (error) {
+    logger.error('Failed to upsert external work item', error);
+    return c.json({ success: false, error: 'Failed to upsert external work item' }, 500);
+  }
+});
+
+app.post('/:id/completion-review', async (c) => {
+  const item = workItemRepository.findById(c.req.param('id'));
+  if (!item) return c.json({ success: false, error: 'Work item not found' }, 404);
+  const parsedBody = await readJsonObject(c);
+  if (parsedBody.response) return parsedBody.response;
+  const data = parsedBody.data!;
+  const evidenceId = readString(data, 'evidenceId', { required: true, maxLength: 64 });
+  if (evidenceId.error) return c.json({ success: false, error: evidenceId.error }, 400);
+  const decision = data.decision;
+  if (decision !== 'accepted' && decision !== 'rejected') {
+    return c.json({ success: false, error: 'decision must be accepted or rejected' }, 400);
+  }
+  const evidence = workItemEvidenceRepository.findEvidenceById(evidenceId.value!);
+  const evidenceProjection = evidence
+    ? workItemEvidenceRepository.findProjectionDataForWorkItems([item.id])
+    : undefined;
+  const belongsThroughAcceptedSession = !!evidence?.agentSessionId &&
+    !evidence.workItemId &&
+    evidenceProjection?.links.some((link) =>
+      link.workItemId === item.id &&
+      link.agentSessionId === evidence.agentSessionId &&
+      link.acceptanceStatus === 'accepted'
+    );
+  if (!evidence || (evidence.workItemId !== item.id && !belongsThroughAcceptedSession)) {
+    return c.json({ success: false, error: 'Completion evidence not found for work item' }, 404);
+  }
+  if (evidence.outcome !== 'completed' || evidence.confidence !== 'explicit') {
+    return c.json({ success: false, error: 'Evidence is not an explicit completion signal' }, 400);
+  }
+  const review = taskDispatchRepository.saveCompletionReview(
+    item.id,
+    evidence.id,
+    decision as CompletionReviewDecision
+  );
+  const updatedItem = decision === 'accepted' && item.externalSource !== 'stash'
+    ? workItemRepository.update(item.id, {
+        status: 'done',
+        statusSource: 'accepted_agent_suggestion',
+      })!
+    : item;
+  return c.json({
+    success: true,
+    data: {
+      review: { ...review, createdAt: review.createdAt.toISOString(), updatedAt: review.updatedAt.toISOString() },
+      item: serializeWorkItem(updatedItem),
+    },
+  });
 });
 
 app.get('/:id', (c) => {

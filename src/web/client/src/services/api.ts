@@ -355,6 +355,26 @@ export async function deleteWorkItem(
   return request(`/work-items/${id}`, { method: 'DELETE' }, signal)
 }
 
+export async function reviewWorkItemCompletion(
+  id: string,
+  evidenceId: string,
+  decision: 'accepted' | 'rejected',
+  signal?: AbortSignal
+): Promise<ApiResponse<{ item: WorkItem }>> {
+  return request<{ item: WorkItem }>(`/work-items/${id}/completion-review`, {
+    method: 'POST',
+    body: JSON.stringify({ evidenceId, decision }),
+  }, signal)
+}
+
+export async function reviewWorkItemSessionLink(
+  linkId: string,
+  decision: 'accept' | 'reject',
+  signal?: AbortSignal
+): Promise<ApiResponse> {
+  return request(`/work-items/session-links/${linkId}/${decision}`, { method: 'POST' }, signal)
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MEMORY API - Session context persistence
 // ═══════════════════════════════════════════════════════════════
@@ -547,6 +567,8 @@ export const api = {
   createWorkItem,
   updateWorkItem,
   deleteWorkItem,
+  reviewWorkItemCompletion,
+  reviewWorkItemSessionLink,
   // Memory API
   fetchMemories,
   fetchMemorySummaries,

@@ -179,6 +179,27 @@ describe('Work item evidence routes', () => {
     });
     expect(promotedUserLinkBody.data.link.acceptedAt).toBeDefined();
 
+    const rejectedSessionId = await upsertAgentSession(token, 'claude-code', 'rejected-link-session');
+    const rejectedLinkResponse = await authedEvidenceRequest(token, `/${workItemId}/session-links`, {
+      method: 'POST',
+      body: JSON.stringify({
+        agentSessionId: rejectedSessionId,
+        linkSource: 'heuristic_suggestion',
+      }),
+    });
+    const rejectedLinkBody = await rejectedLinkResponse.json() as { data: { link: { id: string } } };
+    const rejectedResponse = await authedEvidenceRequest(
+      token,
+      `/session-links/${rejectedLinkBody.data.link.id}/reject`,
+      { method: 'POST' }
+    );
+    expect(rejectedResponse.status).toBe(200);
+    const rejectedBody = await rejectedResponse.json() as {
+      data: { link: { acceptanceStatus: string; acceptedAt?: string } };
+    };
+    expect(rejectedBody.data.link.acceptanceStatus).toBe('rejected');
+    expect(rejectedBody.data.link.acceptedAt).toBeUndefined();
+
     const pendingSessionId = await upsertAgentSession(token, 'codex', 'pending-link-session');
     const pendingLinkResponse = await authedEvidenceRequest(token, `/${workItemId}/session-links`, {
       method: 'POST',

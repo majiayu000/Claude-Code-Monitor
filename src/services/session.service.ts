@@ -12,8 +12,14 @@ import { sessionRepository } from '../infrastructure/database/repositories/sessi
 import { emit } from '../lib/events.js';
 import { getCachedProcesses, clearProcessCache } from '../adapters/process/scanner.js';
 import { detectSessionStatus } from '../adapters/process/detector.js';
-import { getAllSessionsWithFailures as getClaudeSessionsWithFailures } from '../adapters/claude/scanner.js';
-import { getAllCodexSessionsWithFailures } from '../adapters/codex/scanner.js';
+import {
+  clearSessionCache,
+  getAllSessionsWithFailures as getClaudeSessionsWithFailures,
+} from '../adapters/claude/scanner.js';
+import {
+  clearCodexSessionCache,
+  getAllCodexSessionsWithFailures,
+} from '../adapters/codex/scanner.js';
 import { logger } from '../lib/logger.js';
 import { isValidSessionId } from '../lib/session-id.js';
 import type { CreateSessionInput, UpdateSessionInput, AggregatedSession } from './session.types.js';
@@ -28,6 +34,7 @@ import {
 export interface SyncOptions {
   maxAgeDays?: number; // Only sync files modified within this many days (default: 7 for fast sync)
   fullSync?: boolean; // Force full sync of all files
+  includeSubAgents?: boolean; // Include Claude sub-agent transcripts (default: true)
 }
 
 export interface RuntimeSessionScan<T> {
@@ -158,12 +165,12 @@ export class SessionService {
       const [claudeScan, codexScan] = await Promise.all([
         scanRuntimeSessions('claude-code', () => getClaudeSessionsWithFailures({
           maxAgeDays,
-          includeSubAgents: true,
-          includeToolCalls: true,
+          includeSubAgents: options.includeSubAgents ?? true,
+          includeToolCalls: false,
         })),
         scanRuntimeSessions('codex', () => getAllCodexSessionsWithFailures({
           maxAgeDays,
-          includeToolCalls: true,
+          includeToolCalls: false,
         })),
       ]);
       const scannedSessions = [...claudeScan.sessions, ...codexScan.sessions];
@@ -197,10 +204,13 @@ export class SessionService {
         const existing = existingSessionMap.get(agentSession.sessionId);
         const process = processMatches.get(agentSession.sessionId);
 
-        const status = detectSessionStatus(
+        const detectedStatus = detectSessionStatus(
           process || null,
           agentSession.lastActiveAt
         );
+        // `completed` is written only by an explicit hook/user action. A later
+        // process scan must not downgrade that durable signal to lost/idle.
+        const status = existing?.status === 'completed' ? 'completed' : detectedStatus;
 
         if (existing) {
           const nextStatus = existing.status === 'completed' ? 'completed' : status;
@@ -363,3 +373,9 @@ export const getAttentionSessions = sessionService.getAttentionSessions.bind(ses
 export const syncSessions = sessionService.syncSessions.bind(sessionService);
 export const getAggregatedSession = sessionService.getAggregatedSession.bind(sessionService);
 export const completeSession = sessionService.completeSession.bind(sessionService);
+
+/** Release parsed transcript summaries retained by the bulk scanners. */
+export function releaseSessionScanCaches(): void {
+  clearSessionCache();
+  clearCodexSessionCache();
+}

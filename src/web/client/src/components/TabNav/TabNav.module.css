@@ -1,9 +1,18 @@
 .nav {
   display: flex;
-  gap: 0.25rem;
-  padding: 0.5rem 1rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
+  overflow: visible;
+}
+
+.primary {
+  display: flex;
+  gap: 0.25rem;
+  min-width: 0;
   overflow-x: auto;
 }
 
@@ -37,8 +46,103 @@
 .icon {
   font-weight: bold;
   color: var(--color-accent);
+  font-size: 0.72rem;
+  letter-spacing: -0.04em;
 }
 
 .label {
   font-weight: 500;
+}
+
+.more {
+  position: relative;
+  flex: none;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--color-border);
+}
+
+.moreButton {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font: 500 0.82rem var(--font-mono);
+  cursor: pointer;
+}
+
+.moreButton:hover,
+.moreButton.active {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+
+.moreMark {
+  color: var(--color-accent);
+  letter-spacing: 0.08em;
+  transform: translateY(-1px);
+}
+
+.menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  width: 12rem;
+  padding: 0.45rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  box-shadow: 0 14px 36px rgb(0 0 0 / 22%);
+}
+
+.menuLabel {
+  padding: 0.35rem 0.55rem 0.45rem;
+  color: var(--color-text-secondary);
+  font: 600 0.65rem var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.menuItem {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr;
+  align-items: center;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  font: 500 0.82rem var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.menuItemActive {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+}
+
+.menuIcon {
+  color: var(--color-accent);
+  text-align: center;
+}
+
+@media (max-width: 560px) {
+  .nav {
+    padding-inline: 0.6rem;
+  }
+
+  .tab {
+    padding-inline: 0.7rem;
+  }
+
+  .icon {
+    display: none;
+  }
 }

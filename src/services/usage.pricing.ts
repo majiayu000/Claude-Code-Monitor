@@ -120,12 +120,19 @@ export function getModelPricing(model: string): ModelPricing {
     return pricing[litellmKey]
   }
 
-  // Try prefix match for versioned models
-  for (const [key, value] of Object.entries(pricing)) {
+  // Try the longest sufficiently specific prefix for versioned models. Short
+  // family prefixes such as "claude-sonnet" are intentionally excluded: live
+  // catalogs can add a new family entry whose order would otherwise change the
+  // result for an unknown model name.
+  const prefixMatches = Object.entries(pricing).flatMap(([key, value]) => {
     const baseKey = key.replace('claude/', '')
-    if (model.startsWith(baseKey.split('-').slice(0, -1).join('-'))) {
-      return value
-    }
+    const prefixSegments = baseKey.split('-').slice(0, -1)
+    if (prefixSegments.length < 3) return []
+    const prefix = prefixSegments.join('-')
+    return model.startsWith(prefix) ? [{ prefix, value }] : []
+  }).sort((a, b) => b.prefix.length - a.prefix.length)
+  if (prefixMatches[0]) {
+    return prefixMatches[0].value
   }
 
   // Check for model family
@@ -186,8 +193,11 @@ export function calculateCostWithCache(
 }
 
 /** Initialize pricing (call at startup) */
-export async function initPricing(): Promise<void> {
-  await getPricingConfig()
+export async function initPricing(
+  loader: () => Promise<PricingConfig> = fetchLiteLLMPricing
+): Promise<void> {
+  cachedPricing = await loader()
+  cacheTime = Date.now()
 }
 
 /** Reset pricing internals for focused tests. */

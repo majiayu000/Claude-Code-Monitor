@@ -33,6 +33,8 @@ interface WorkItemRow {
   area_id: string | null;
   area_name: string | null;
   status_source: string;
+  external_source: string | null;
+  external_id: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -59,6 +61,8 @@ function rowToWorkItem(row: WorkItemRow): WorkItem {
     areaId: row.area_id || undefined,
     area: row.area_name || undefined,
     statusSource: row.status_source as WorkItem['statusSource'],
+    externalSource: row.external_source || undefined,
+    externalId: row.external_id || undefined,
     completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -80,6 +84,7 @@ export interface IWorkItemRepository {
   findAreaById(id: string): Area | null;
   findOrCreateArea(name: string, projectRoot?: string): Area;
   findById(id: string): WorkItem | null;
+  findByExternalIdentity(source: string, externalId: string): WorkItem | null;
   findAll(filters?: WorkItemFilters): WorkItem[];
   create(input: WorkItemCreateInput): WorkItem;
   update(id: string, input: WorkItemUpdateInput): WorkItem | null;
@@ -125,6 +130,14 @@ class WorkItemRepository implements IWorkItemRepository {
     const db = getDatabase();
     const row = db.prepare(`${buildWorkItemSelect('WHERE work_items.id = ?')}`)
       .get(id) as WorkItemRow | undefined;
+    return row ? rowToWorkItem(row) : null;
+  }
+
+  findByExternalIdentity(source: string, externalId: string): WorkItem | null {
+    const db = getDatabase();
+    const row = db.prepare(buildWorkItemSelect(
+      'WHERE work_items.external_source = ? AND work_items.external_id = ?'
+    )).get(source, externalId) as WorkItemRow | undefined;
     return row ? rowToWorkItem(row) : null;
   }
 
@@ -174,8 +187,8 @@ class WorkItemRepository implements IWorkItemRepository {
       db.prepare(`
         INSERT INTO work_items (
           id, kind, status, title, body, project_root, area_id, status_source,
-          completed_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          external_source, external_id, completed_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         kind,
@@ -185,6 +198,8 @@ class WorkItemRepository implements IWorkItemRepository {
         projectRoot,
         area?.id ?? null,
         input.statusSource ?? 'user',
+        input.externalSource ?? null,
+        input.externalId ?? null,
         completedAt,
         now,
         now
