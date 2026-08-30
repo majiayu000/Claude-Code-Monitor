@@ -5,14 +5,6 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Layout, layoutStyles } from '@/components/Layout'
 import { SessionCardSkeleton } from '@/components/Skeleton'
 import { HelpModal } from '@/components/HelpModal'
-import { UsagePanel } from '@/components/UsagePanel'
-import { ProjectStatsBar } from '@/components/ProjectStatsBar'
-import { ProjectsGrid } from '@/components/ProjectsGrid'
-import { MemoryPanel } from '@/components/MemoryPanel'
-import { PlansPanel } from '@/components/PlansPanel'
-import { TerminalPanel } from '@/components/TerminalPanel'
-import { WorkItemsPanel } from '@/components/WorkItemsPanel'
-import { OrchestratorPanel } from '@/components/OrchestratorPanel'
 import { AuthSetup } from '@/components/AuthSetup'
 import { AuthLogin } from '@/components/AuthLogin'
 import type { TabId } from '@/components/TabNav'
@@ -20,6 +12,14 @@ import type { ProjectInfo, RuntimeFilter, SessionStatus } from '@/types'
 import { useAuth, useSessions, useKeyboardShortcuts, useNotifications, useProjects } from '@/hooks'
 
 const SessionList = lazy(() => import('@/components/SessionList').then(m => ({ default: m.SessionList })))
+const UsagePanel = lazy(() => import('@/components/UsagePanel').then(m => ({ default: m.UsagePanel })))
+const ProjectStatsBar = lazy(() => import('@/components/ProjectStatsBar').then(m => ({ default: m.ProjectStatsBar })))
+const ProjectsGrid = lazy(() => import('@/components/ProjectsGrid').then(m => ({ default: m.ProjectsGrid })))
+const MemoryPanel = lazy(() => import('@/components/MemoryPanel').then(m => ({ default: m.MemoryPanel })))
+const PlansPanel = lazy(() => import('@/components/PlansPanel').then(m => ({ default: m.PlansPanel })))
+const TerminalPanel = lazy(() => import('@/components/TerminalPanel').then(m => ({ default: m.TerminalPanel })))
+const WorkItemsPanel = lazy(() => import('@/components/WorkItemsPanel').then(m => ({ default: m.WorkItemsPanel })))
+const OrchestratorPanel = lazy(() => import('@/components/OrchestratorPanel').then(m => ({ default: m.OrchestratorPanel })))
 
 const THEME_ORDER: Theme[] = ['cyberpunk', 'matrix', 'synthwave', 'minimal', 'tokyo']
 
@@ -213,93 +213,95 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
         </div>
       )}
 
-      {activeTab === 'sessions' && !loading && (
-        <Suspense fallback={<SessionCardSkeleton count={4} />}>
-          {selectedProjectRoot && (
-            <div className={layoutStyles.projectFilterBar}>
-              <span className={layoutStyles.projectFilterText}>
-                Project:
-                <strong>{selectedProject?.name || selectedProjectRoot.split('/').pop() || selectedProjectRoot}</strong>
-                <span className={layoutStyles.projectFilterPath}>
-                  {selectedProject?.displayPath || selectedProjectRoot}
+      <Suspense fallback={<SessionCardSkeleton count={4} />}>
+        {activeTab === 'sessions' && !loading && (
+          <>
+            {selectedProjectRoot && (
+              <div className={layoutStyles.projectFilterBar}>
+                <span className={layoutStyles.projectFilterText}>
+                  Project:
+                  <strong>{selectedProject?.name || selectedProjectRoot.split('/').pop() || selectedProjectRoot}</strong>
+                  <span className={layoutStyles.projectFilterPath}>
+                    {selectedProject?.displayPath || selectedProjectRoot}
+                  </span>
                 </span>
-              </span>
-              <button
-                type="button"
-                className={layoutStyles.projectFilterClear}
-                onClick={handleClearProjectFilter}
-              >
-                Clear
-              </button>
-            </div>
-          )}
-          <SessionList
-            sessions={filteredSessions}
+                <button
+                  type="button"
+                  className={layoutStyles.projectFilterClear}
+                  onClick={handleClearProjectFilter}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+            <SessionList
+              sessions={filteredSessions}
+              onRecover={handleRecover}
+              onStop={handleStop}
+              onComplete={handleComplete}
+              getSessionFull={getSessionFull}
+              loadSessionFull={loadSessionFull}
+              isLoadingFull={isLoadingFull}
+              pagination={pagination}
+              onLoadMore={loadMore}
+              loadingMore={loadingMore}
+              hasActiveFilters={hasActiveFilters}
+              totalCount={totalSessionCount}
+              globalMatchCount={matchedSessionCount}
+            />
+          </>
+        )}
+
+        {activeTab === 'analytics' && !loading && (
+          <UsagePanel />
+        )}
+
+        {(activeTab === 'overview' || activeTab === 'orchestrator') && !loading && (
+          <OrchestratorPanel
+            token={token}
+            onOpenSession={handleOpenOrchestratorSession}
             onRecover={handleRecover}
             onStop={handleStop}
             onComplete={handleComplete}
-            getSessionFull={getSessionFull}
-            loadSessionFull={loadSessionFull}
-            isLoadingFull={isLoadingFull}
-            pagination={pagination}
-            onLoadMore={loadMore}
-            loadingMore={loadingMore}
-            hasActiveFilters={hasActiveFilters}
-            totalCount={totalSessionCount}
-            globalMatchCount={matchedSessionCount}
+            onCopySessionId={handleCopySessionId}
           />
-        </Suspense>
-      )}
+        )}
 
-      {activeTab === 'analytics' && !loading && (
-        <UsagePanel />
-      )}
+        {activeTab === 'work' && !loading && (
+          <WorkItemsPanel token={token} />
+        )}
 
-      {(activeTab === 'overview' || activeTab === 'orchestrator') && !loading && (
-        <OrchestratorPanel
-          token={token}
-          onOpenSession={handleOpenOrchestratorSession}
-          onRecover={handleRecover}
-          onStop={handleStop}
-          onComplete={handleComplete}
-          onCopySessionId={handleCopySessionId}
-        />
-      )}
+        {activeTab === 'projects' && !loading && (
+          <>
+            {projectsError && (
+              <div className={layoutStyles.errorBox} role="alert">
+                Error: {projectsError}
+              </div>
+            )}
+            <ProjectStatsBar stats={projectStats} />
+            {projectsLoading ? (
+              <SessionCardSkeleton count={4} />
+            ) : (
+              <ProjectsGrid
+                projects={projects}
+                onProjectClick={handleProjectClick}
+              />
+            )}
+          </>
+        )}
 
-      {activeTab === 'work' && !loading && (
-        <WorkItemsPanel token={token} />
-      )}
+        {activeTab === 'memory' && !loading && (
+          <MemoryPanel />
+        )}
 
-      {activeTab === 'projects' && !loading && (
-        <>
-          {projectsError && (
-            <div className={layoutStyles.errorBox} role="alert">
-              Error: {projectsError}
-            </div>
-          )}
-          <ProjectStatsBar stats={projectStats} />
-          {projectsLoading ? (
-            <SessionCardSkeleton count={4} />
-          ) : (
-            <ProjectsGrid
-              projects={projects}
-              onProjectClick={handleProjectClick}
-            />
-          )}
-        </>
-      )}
+        {activeTab === 'plans' && !loading && (
+          <PlansPanel />
+        )}
 
-      {activeTab === 'memory' && !loading && (
-        <MemoryPanel />
-      )}
-
-      {activeTab === 'plans' && !loading && (
-        <PlansPanel />
-      )}
-
-      {activeTab === 'terminal' && (
-        <TerminalPanel token={token} onLogout={onLogout} />
-      )}
+        {activeTab === 'terminal' && (
+          <TerminalPanel token={token} onLogout={onLogout} />
+        )}
+      </Suspense>
 
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
     </Layout>
