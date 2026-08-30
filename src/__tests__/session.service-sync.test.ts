@@ -6,7 +6,7 @@ import { tmpdir } from 'os';
 const tempDirs: string[] = [];
 
 function createTempHome(): string {
-  const homeDir = mkdtempSync(join(tmpdir(), 'keepline-sync-home-'));
+  const homeDir = mkdtempSync(join(tmpdir(), 'keepline-test-sync-home-'));
   tempDirs.push(homeDir);
   return homeDir;
 }
@@ -38,7 +38,9 @@ function runSyncScript(homeDir: string, script: string): Record<string, unknown>
     env: {
       ...process.env,
       HOME: homeDir,
-      KEEPLINE_HOME: join(homeDir, '.keepline'),
+      KEEPLINE_HOME: homeDir,
+      KEEPLINE_TEST_HOME: homeDir,
+      KEEPLINE_TEST_ISOLATED: '1',
     },
     stdout: 'pipe',
     stderr: 'pipe',

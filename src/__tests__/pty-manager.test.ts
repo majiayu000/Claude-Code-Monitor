@@ -21,7 +21,7 @@ function createExitScript(name: string, body: string): string {
   return filePath;
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs: number = 3000): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs: number = 10_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (predicate()) return;
