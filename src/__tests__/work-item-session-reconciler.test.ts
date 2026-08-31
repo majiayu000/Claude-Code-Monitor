@@ -57,6 +57,7 @@ describe('linked agent session reconciliation', () => {
     const evidence = workItemEvidenceRepository.findLatestExplicitCompletionForAgentSession(linked.id);
     expect(firstCompletion.evidenceCreated).toBe(1);
     expect(evidence).toMatchObject({
+      workItemId: item.id,
       outcome: 'completed',
       confidence: 'explicit',
       summary: 'All checks passed explicitly.',

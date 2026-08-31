@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetDatabase } from '../db/migrations.js';
 import { closeDatabase } from '../infrastructure/database/sqlite.js';
 import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
+import { workItemEvidenceRepository } from '../infrastructure/database/repositories/work-item-evidence.repository.js';
+import { workItemRepository } from '../infrastructure/database/repositories/work-item.repository.js';
 
 describe('Session Repository Upsert', () => {
   beforeEach(() => {
@@ -210,11 +212,31 @@ describe('Session Repository Upsert', () => {
       sessionId: 'explicitly-completed',
       status: 'completed',
     });
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'linked-fast-exit',
+      client: 'codex',
+      status: 'lost',
+    });
+    const linkedItem = workItemRepository.create({ title: 'Keep linked fast exit visible' });
+    const linkedAgentSession = workItemEvidenceRepository.upsertAgentSession({
+      runtimeId: 'codex',
+      runtimeSessionId: 'linked-fast-exit',
+      cwd: base.directory,
+      status: 'lost',
+      title: base.title,
+    });
+    workItemEvidenceRepository.createSessionLink({
+      workItemId: linkedItem.id,
+      agentSessionId: linkedAgentSession.id,
+      linkSource: 'user',
+    });
 
-    expect(sessionRepository.findAll()).toHaveLength(4);
+    expect(sessionRepository.findAll()).toHaveLength(5);
     expect(sessionRepository.findOperational().map((session) => session.sessionId).sort()).toEqual([
       'current-running',
       'explicitly-completed',
+      'linked-fast-exit',
       'observed-lost',
     ]);
     expect(
@@ -222,6 +244,7 @@ describe('Session Repository Upsert', () => {
     ).toEqual([
       'current-running',
       'explicitly-completed',
+      'linked-fast-exit',
       'observed-lost',
     ]);
   });

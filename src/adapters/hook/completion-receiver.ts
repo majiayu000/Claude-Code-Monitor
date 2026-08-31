@@ -74,7 +74,8 @@ function recordCompletionClaim(
   sessionId: string,
   cwd: string,
   message: unknown,
-  claimAt: Date
+  claimAt: Date,
+  allowExplicitCompletion: boolean
 ): 'recorded' | 'pending' | 'ignored' {
   if (typeof message !== 'string') return 'ignored';
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -91,13 +92,14 @@ function recordCompletionClaim(
     .find((candidate) => candidate.workItemId === workItem.id);
   const summary = lines.slice(0, -1).join(' ').slice(0, 500) ||
     'Agent explicitly claimed the linked work item is complete.';
-  if (!link) {
-    const matchesDispatch = taskDispatchRepository.findByWorkItemId(workItem.id).some(
+  if (!link || !allowExplicitCompletion) {
+    const matchingDispatches = taskDispatchRepository.findByWorkItemId(workItem.id).filter(
       (dispatch) => dispatch.runtimeId === 'claude-code' &&
         dispatch.cwd === cwd &&
         ['launching', 'awaiting_session', 'ambiguous', 'linked'].includes(dispatch.state)
     );
-    if (!matchesDispatch) return 'ignored';
+    if (matchingDispatches.length !== 1) return 'ignored';
+    const dispatch = matchingDispatches[0];
     const existingPending = workItemEvidenceRepository
       .findPendingAgentCompletionClaims(workItem.id, sessionId)
       .some((evidence) => evidence.metadata?.claimAt === claimAt.toISOString());
@@ -113,6 +115,7 @@ function recordCompletionClaim(
         metadata: {
           source: 'pending_agent_completion_claim',
           runtimeSessionId: sessionId,
+          dispatchId: dispatch.id,
           cwd,
           claimAt: claimAt.toISOString(),
         },
@@ -200,7 +203,8 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
             body.session_id,
             body.cwd,
             body.last_assistant_message,
-            eventTimestamp
+            eventTimestamp,
+            false
           ) === 'pending') {
             emit('session:turn-ended', {
               sessionId: body.session_id,
@@ -223,7 +227,8 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
           body.session_id,
           body.cwd,
           body.last_assistant_message,
-          eventTimestamp
+          eventTimestamp,
+          true
         );
         emit('session:turn-ended', {
           sessionId: body.session_id,

@@ -18,7 +18,7 @@ import {
 describe('task dispatch correctness', () => {
   beforeEach(() => resetDatabase());
 
-  test('gives Claude an exact completion-claim contract without changing stored prompts', async () => {
+  test('gives launched agents a dispatch marker without changing stored prompts', async () => {
     const launches: Array<{ executable: string; args: string[] }> = [];
     const service = new TaskDispatchService({
       launch: (executable, args) => { launches.push({ executable, args }); },
@@ -37,10 +37,49 @@ describe('task dispatch correctness', () => {
     expect(launches[0]).toEqual({
       executable: 'claude',
       args: [
-        `Run the checks\n\nOnly after the task is fully complete and verified, end your final response with this exact line:\nKEEPLINE_COMPLETE_WORK_ITEM:${claudeItem.id}\nDo not output that line when blocked, waiting for input, or incomplete.`,
+        `Run the checks\n\nKEEPLINE_DISPATCH_ID:${claudeDispatch.id}\n\nOnly after the task is fully complete and verified, end your final response with this exact line:\nKEEPLINE_COMPLETE_WORK_ITEM:${claudeItem.id}\nDo not output that line when blocked, waiting for input, or incomplete.`,
       ],
     });
-    expect(launches[1]).toEqual({ executable: 'codex', args: ['Run Codex checks'] });
+    const codexDispatch = taskDispatchRepository.findByIdempotencyKey('codex-contract')!;
+    expect(launches[1]).toEqual({
+      executable: 'codex',
+      args: [`Run Codex checks\n\nKEEPLINE_DISPATCH_ID:${codexDispatch.id}`],
+    });
+  });
+
+  test('does not auto-link an unrelated sole session from the same directory', async () => {
+    const now = new Date('2026-08-30T00:00:00.000Z');
+    const launches: Array<{ args: string[] }> = [];
+    const service = new TaskDispatchService({
+      now: () => now,
+      launch: (_executable, args) => { launches.push({ args }); },
+    });
+    const item = workItemRepository.create({ title: 'Trusted dispatch' });
+    const dispatch = await service.dispatch(item.id, {
+      runtimeId: 'codex', cwd: '/tmp', prompt: 'Trusted prompt', idempotencyKey: 'trusted-dispatch',
+    });
+    sessionRepository.upsert({
+      sessionId: 'codex_unrelated-session', client: 'codex', directory: '/tmp',
+      initialPrompt: 'An unrelated prompt', title: 'Unrelated', status: 'running',
+      lastActiveAt: new Date(now.getTime() + 1),
+    });
+
+    service.reconcilePending();
+
+    expect(taskDispatchRepository.findById(dispatch.id)?.state).toBe('ambiguous');
+    expect(taskDispatchRepository.findById(dispatch.id)?.linkedAgentSessionId).toBeUndefined();
+
+    sessionRepository.upsert({
+      sessionId: 'codex_trusted-session', client: 'codex', directory: '/tmp',
+      initialPrompt: launches[0].args[0], title: 'Trusted', status: 'running',
+      lastActiveAt: new Date(now.getTime() + 2),
+    });
+    taskDispatchRepository.updateState(dispatch.id, 'awaiting_session');
+    service.reconcilePending();
+
+    expect(taskDispatchRepository.findById(dispatch.id)?.state).toBe('linked');
+    expect(taskDispatchRepository.findById(dispatch.id)?.linkedAgentSessionId)
+      .toBe(encodeAgentSessionId('codex', 'codex_trusted-session'));
   });
 
   test('makes every dispatch ambiguous when multiple tasks match the same new session', async () => {

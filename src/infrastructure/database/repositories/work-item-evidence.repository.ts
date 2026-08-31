@@ -133,7 +133,11 @@ export interface IWorkItemEvidenceRepository {
   findLatestExplicitCompletionForAgentSession(agentSessionId: string): ProgressEvidence | null;
   findAcceptedLinkedAgentSessions(): AgentSession[];
   findAcceptedSessionLinks(agentSessionId: string): WorkItemSessionLink[];
-  findCanonicalCompletionEvidence(agentSessionId: string, completedAt: Date): ProgressEvidence | null;
+  findCanonicalCompletionEvidence(
+    agentSessionId: string,
+    workItemId: string,
+    completedAt: Date
+  ): ProgressEvidence | null;
   findAgentCompletionClaimEvidence(
     agentSessionId: string,
     workItemId: string,
@@ -143,6 +147,7 @@ export interface IWorkItemEvidenceRepository {
     workItemId: string,
     runtimeSessionId: string
   ): ProgressEvidence[];
+  deletePendingAgentCompletionClaim(id: string): boolean;
   findProjectionDataForWorkItems(workItemIds: string[]): WorkItemEvidenceProjectionData;
 }
 
@@ -359,15 +364,17 @@ class WorkItemEvidenceRepository implements IWorkItemEvidenceRepository {
 
   findCanonicalCompletionEvidence(
     agentSessionId: string,
+    workItemId: string,
     completedAt: Date
   ): ProgressEvidence | null {
     const rows = getDatabase().prepare(`
       SELECT * FROM progress_evidence
       WHERE agent_session_id = ?
+        AND work_item_id = ?
         AND outcome = 'completed'
         AND confidence = 'explicit'
       ORDER BY occurred_at DESC, created_at DESC
-    `).all(agentSessionId) as ProgressEvidenceRow[];
+    `).all(agentSessionId, workItemId) as ProgressEvidenceRow[];
     const completedAtIso = completedAt.toISOString();
     for (const row of rows) {
       const evidence = rowToProgressEvidence(row);
@@ -419,6 +426,17 @@ class WorkItemEvidenceRepository implements IWorkItemEvidenceRepository {
       evidence.metadata?.source === 'pending_agent_completion_claim' &&
       evidence.metadata.runtimeSessionId === runtimeSessionId
     );
+  }
+
+  deletePendingAgentCompletionClaim(id: string): boolean {
+    const result = getDatabase().prepare(`
+      DELETE FROM progress_evidence
+      WHERE id = ?
+        AND outcome = 'progress'
+        AND confidence = 'inferred'
+        AND json_extract(metadata, '$.source') = 'pending_agent_completion_claim'
+    `).run(id);
+    return result.changes === 1;
   }
 
   findProjectionDataForWorkItems(workItemIds: string[]): WorkItemEvidenceProjectionData {

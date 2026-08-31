@@ -1,5 +1,6 @@
 import { runtimeIdForClient } from './runtime-status.js';
 import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
+import { taskDispatchRepository } from '../infrastructure/database/repositories/task-dispatch.repository.js';
 import { workItemEvidenceRepository } from '../infrastructure/database/repositories/work-item-evidence.repository.js';
 
 export interface LinkedSessionReconcileResult {
@@ -42,21 +43,45 @@ export function reconcileLinkedAgentSessions(): LinkedSessionReconcileResult {
     });
     result.updated++;
 
-    for (const link of workItemEvidenceRepository.findAcceptedSessionLinks(linked.id)) {
+    const acceptedLinks = workItemEvidenceRepository.findAcceptedSessionLinks(linked.id);
+    for (const link of acceptedLinks) {
       const pendingClaims = workItemEvidenceRepository.findPendingAgentCompletionClaims(
         link.workItemId,
         canonical.sessionId
       );
       for (const pending of pendingClaims) {
+        const dispatchId = pending.metadata?.dispatchId;
+        const dispatch = typeof dispatchId === 'string'
+          ? taskDispatchRepository.findById(dispatchId)
+          : null;
+        const dispatchMatches = dispatch?.state === 'linked' &&
+          dispatch.workItemId === link.workItemId &&
+          dispatch.runtimeId === linked.runtimeId &&
+          dispatch.cwd === canonical.directory &&
+          dispatch.linkedAgentSessionId === linked.id &&
+          dispatch.candidateSessionIds.includes(canonical.sessionId);
+        if (!dispatchMatches) {
+          workItemEvidenceRepository.deletePendingAgentCompletionClaim(pending.id);
+          continue;
+        }
         const claimAtValue = pending.metadata?.claimAt;
-        if (typeof claimAtValue !== 'string') continue;
+        if (typeof claimAtValue !== 'string') {
+          workItemEvidenceRepository.deletePendingAgentCompletionClaim(pending.id);
+          continue;
+        }
         const claimAt = new Date(claimAtValue);
-        if (Number.isNaN(claimAt.getTime()) ||
-            workItemEvidenceRepository.findAgentCompletionClaimEvidence(
-              linked.id,
-              link.workItemId,
-              claimAt
-            )) continue;
+        if (Number.isNaN(claimAt.getTime())) {
+          workItemEvidenceRepository.deletePendingAgentCompletionClaim(pending.id);
+          continue;
+        }
+        if (workItemEvidenceRepository.findAgentCompletionClaimEvidence(
+          linked.id,
+          link.workItemId,
+          claimAt
+        )) {
+          workItemEvidenceRepository.deletePendingAgentCompletionClaim(pending.id);
+          continue;
+        }
         workItemEvidenceRepository.createProgressEvidence({
           workItemId: link.workItemId,
           agentSessionId: linked.id,
@@ -71,29 +96,35 @@ export function reconcileLinkedAgentSessions(): LinkedSessionReconcileResult {
             claimAt: claimAt.toISOString(),
           },
         });
+        workItemEvidenceRepository.deletePendingAgentCompletionClaim(pending.id);
         result.evidenceCreated++;
       }
     }
 
     if (canonical.status !== 'completed' || !canonical.completedAt) continue;
-    if (workItemEvidenceRepository.findCanonicalCompletionEvidence(linked.id, canonical.completedAt)) {
-      continue;
-    }
+    for (const link of acceptedLinks) {
+      if (workItemEvidenceRepository.findCanonicalCompletionEvidence(
+        linked.id,
+        link.workItemId,
+        canonical.completedAt
+      )) continue;
 
-    workItemEvidenceRepository.createProgressEvidence({
-      agentSessionId: linked.id,
-      runtimeId: linked.runtimeId,
-      kind: 'message',
-      outcome: 'completed',
-      confidence: 'explicit',
-      summary: conciseSummary(canonical.lastMessage, `${canonical.title} completed`),
-      occurredAt: canonical.completedAt,
-      metadata: {
-        source: 'canonical_session_completed',
-        completedAt: canonical.completedAt.toISOString(),
-      },
-    });
-    result.evidenceCreated++;
+      workItemEvidenceRepository.createProgressEvidence({
+        workItemId: link.workItemId,
+        agentSessionId: linked.id,
+        runtimeId: linked.runtimeId,
+        kind: 'message',
+        outcome: 'completed',
+        confidence: 'explicit',
+        summary: conciseSummary(canonical.lastMessage, `${canonical.title} completed`),
+        occurredAt: canonical.completedAt,
+        metadata: {
+          source: 'canonical_session_completed',
+          completedAt: canonical.completedAt.toISOString(),
+        },
+      });
+      result.evidenceCreated++;
+    }
   }
 
   return result;

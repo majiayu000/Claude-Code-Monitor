@@ -70,6 +70,23 @@ interface SessionListRow {
   updated_at: string;
 }
 
+const OPERATIONAL_SESSION_FILTER = `
+  status != 'lost'
+  OR was_process_observed = 1
+  OR EXISTS (
+    SELECT 1
+    FROM agent_sessions
+    INNER JOIN work_item_session_links
+      ON work_item_session_links.agent_session_id = agent_sessions.id
+    WHERE agent_sessions.runtime_session_id = sessions.session_id
+      AND work_item_session_links.acceptance_status = 'accepted'
+      AND (
+        (sessions.client = 'codex' AND agent_sessions.runtime_id = 'codex')
+        OR (sessions.client = 'claude' AND agent_sessions.runtime_id = 'claude-code')
+      )
+  )
+`;
+
 interface ActiveSessionRow {
   session_id: string;
   client: string;
@@ -244,7 +261,7 @@ class SessionRepository implements ISessionRepository {
     const rows = db
       .prepare(`
         SELECT * FROM sessions
-        WHERE status != 'lost' OR was_process_observed = 1
+        WHERE ${OPERATIONAL_SESSION_FILTER}
         ORDER BY last_active_at DESC
       `)
       .all() as SessionRow[];
@@ -311,7 +328,7 @@ class SessionRepository implements ISessionRepository {
           created_at,
           updated_at
         FROM sessions
-        WHERE status != 'lost' OR was_process_observed = 1
+        WHERE ${OPERATIONAL_SESSION_FILTER}
         ORDER BY last_active_at DESC
       `)
       .all() as SessionListRow[];

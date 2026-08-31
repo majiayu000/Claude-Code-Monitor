@@ -66,15 +66,17 @@ function matchesRuntime(session: Session, runtimeId: RuntimeId): boolean {
 function buildLaunch(
   runtimeId: RuntimeId,
   prompt: string,
-  workItemId: string
+  workItemId: string,
+  dispatchId: string
 ): { executable: string; args: string[] } {
-  if (runtimeId === 'codex') return { executable: 'codex', args: [prompt] };
+  const dispatchedPrompt = `${prompt}\n\nKEEPLINE_DISPATCH_ID:${dispatchId}`;
+  if (runtimeId === 'codex') return { executable: 'codex', args: [dispatchedPrompt] };
   if (runtimeId === 'claude-code') {
     const completionContract =
       'Only after the task is fully complete and verified, end your final response with this exact line:\n' +
       `KEEPLINE_COMPLETE_WORK_ITEM:${workItemId}\n` +
       'Do not output that line when blocked, waiting for input, or incomplete.';
-    return { executable: 'claude', args: [`${prompt}\n\n${completionContract}`] };
+    return { executable: 'claude', args: [`${dispatchedPrompt}\n\n${completionContract}`] };
   }
   throw new Error(`Unsupported runtime: ${runtimeId}`);
 }
@@ -147,7 +149,7 @@ export class TaskDispatchService {
       correlationDeadlineAt: new Date(this.now().getTime() + this.correlationTimeoutMs),
     });
     dispatch = taskDispatchRepository.updateState(dispatch.id, 'launching')!;
-    const command = buildLaunch(input.runtimeId, prompt, workItemId);
+    const command = buildLaunch(input.runtimeId, prompt, workItemId, dispatch.id);
     try {
       if (this.launch) {
         await this.launch(command.executable, command.args, cwd, dispatch.terminalApp);
@@ -191,7 +193,10 @@ export class TaskDispatchService {
         return canonicalDirectory(session.directory) === dispatch.cwd;
       });
       candidatesByDispatch.set(dispatch.id, candidates);
-      for (const candidate of candidates) {
+      const dispatchMarker = `KEEPLINE_DISPATCH_ID:${dispatch.id}`;
+      for (const candidate of candidates.filter((session) =>
+        session.initialPrompt.split('\n').includes(dispatchMarker)
+      )) {
         const owners = dispatchOwnersBySession.get(candidate.sessionId) ?? new Set<string>();
         owners.add(dispatch.id);
         dispatchOwnersBySession.set(candidate.sessionId, owners);
@@ -206,20 +211,24 @@ export class TaskDispatchService {
       }
       if (dispatch.state === 'ambiguous' || !dispatch.launchedAt) return dispatch;
       const candidates = candidatesByDispatch.get(dispatch.id) ?? [];
-      const hasSharedCandidate = candidates.some((session) => {
+      const dispatchMarker = `KEEPLINE_DISPATCH_ID:${dispatch.id}`;
+      const trustedCandidates = candidates.filter((session) =>
+        session.initialPrompt.split('\n').includes(dispatchMarker)
+      );
+      const hasSharedCandidate = trustedCandidates.some((session) => {
         const owners = dispatchOwnersBySession.get(session.sessionId);
         if ((owners?.size ?? 0) > 1) return true;
         const agentSessionId = encodeAgentSessionId(dispatch.runtimeId, session.sessionId);
         return taskDispatchRepository.findLinkedByAgentSessionId(agentSessionId)
           .some((linked) => linked.id !== dispatch.id);
       });
-      if (candidates.length === 1 && !hasSharedCandidate) {
+      if (trustedCandidates.length === 1 && !hasSharedCandidate) {
         try {
-          return this.link(dispatch, candidates[0]);
+          return this.link(dispatch, trustedCandidates[0]);
         } catch (error) {
           if (!(error instanceof DispatchSessionClaimConflictError)) throw error;
           return taskDispatchRepository.updateState(dispatch.id, 'ambiguous', {
-            candidateSessionIds: [candidates[0].sessionId],
+            candidateSessionIds: [trustedCandidates[0].sessionId],
             error: error.message,
           })!;
         }

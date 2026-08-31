@@ -39,6 +39,115 @@ function successfulScanCommand(): string[] {
 }
 
 describe('service runtime isolation', () => {
+  test('does not trust a completion claim when the canonical session is missing', async () => {
+    liveService = await startKeeplineService({
+      port: 0,
+      hookPort: 0,
+      scanIntervalMs: 0,
+      scanCommand: successfulScanCommand(),
+    });
+    const sessionId = 'missing-canonical-session';
+    const workItem = workItemRepository.create({ title: 'Do not trust stale links' });
+    const agentSession = workItemEvidenceRepository.upsertAgentSession({
+      runtimeId: 'claude-code',
+      runtimeSessionId: sessionId,
+      cwd: '/tmp/expected-project',
+      status: 'running',
+      title: 'Do not trust stale links',
+    });
+    workItemEvidenceRepository.createSessionLink({
+      workItemId: workItem.id,
+      agentSessionId: agentSession.id,
+      linkSource: 'user',
+    });
+
+    const response = await fetch(`http://127.0.0.1:${liveService.hookPort}/hook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        hook_event_name: 'Stop',
+        session_id: sessionId,
+        cwd: '/tmp/wrong-project',
+        timestamp: '2026-08-30T10:07:00.000Z',
+        last_assistant_message:
+          `Done\nKEEPLINE_COMPLETE_WORK_ITEM:${workItem.id}`,
+      }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(
+      workItemEvidenceRepository.findLatestExplicitCompletionForAgentSession(agentSession.id)
+    ).toBeNull();
+  });
+
+  test('does not promote a pending claim from a failed dispatch', async () => {
+    liveService = await startKeeplineService({
+      port: 0,
+      hookPort: 0,
+      scanIntervalMs: 0,
+      scanCommand: successfulScanCommand(),
+    });
+    const sessionId = 'failed-dispatch-session';
+    const workItem = workItemRepository.create({ title: 'Discard stale claim' });
+    const dispatch = taskDispatchRepository.create({
+      workItemId: workItem.id,
+      runtimeId: 'claude-code',
+      cwd: '/tmp/failed-dispatch',
+      prompt: 'Discard stale claim',
+      terminalApp: 'auto',
+      idempotencyKey: 'failed-pending-claim',
+      preLaunchSessionIds: [],
+      correlationDeadlineAt: new Date('2026-08-30T10:20:00.000Z'),
+    });
+    taskDispatchRepository.updateState(dispatch.id, 'failed', {
+      launchedAt: new Date('2026-08-30T10:00:00.000Z'),
+    });
+    sessionRepository.upsert({
+      sessionId,
+      client: 'claude',
+      directory: '/tmp/failed-dispatch',
+      status: 'running',
+    });
+    const agentSession = workItemEvidenceRepository.upsertAgentSession({
+      runtimeId: 'claude-code',
+      runtimeSessionId: sessionId,
+      cwd: '/tmp/failed-dispatch',
+      status: 'running',
+      title: 'Discard stale claim',
+    });
+    workItemEvidenceRepository.createSessionLink({
+      workItemId: workItem.id,
+      agentSessionId: agentSession.id,
+      linkSource: 'user',
+    });
+    const claimAt = new Date('2026-08-30T10:08:00.000Z');
+    workItemEvidenceRepository.createProgressEvidence({
+      workItemId: workItem.id,
+      runtimeId: 'claude-code',
+      kind: 'message',
+      outcome: 'progress',
+      confidence: 'inferred',
+      summary: 'Stale completion claim',
+      occurredAt: claimAt,
+      metadata: {
+        source: 'pending_agent_completion_claim',
+        runtimeSessionId: sessionId,
+        dispatchId: dispatch.id,
+        cwd: '/tmp/failed-dispatch',
+        claimAt: claimAt.toISOString(),
+      },
+    });
+
+    reconcileLinkedAgentSessions();
+
+    expect(
+      workItemEvidenceRepository.findLatestExplicitCompletionForAgentSession(agentSession.id)
+    ).toBeNull();
+    expect(
+      workItemEvidenceRepository.findPendingAgentCompletionClaims(workItem.id, sessionId)
+    ).toHaveLength(0);
+  });
+
   test('treats Claude Stop as a turn boundary, never task completion', async () => {
     liveService = await startKeeplineService({
       port: 0,
@@ -187,6 +296,12 @@ describe('service runtime isolation', () => {
       WHERE work_item_id = ? AND json_extract(metadata, '$.source') = 'pending_agent_completion_claim'
     `).get(pendingWorkItem.id) as { count: number };
     expect(pendingCount.count).toBe(1);
+    expect(
+      workItemEvidenceRepository.findPendingAgentCompletionClaims(
+        pendingWorkItem.id,
+        pendingSessionId
+      )[0]?.metadata?.dispatchId
+    ).toBe(pendingDispatch.id);
 
     sessionRepository.upsert({
       sessionId: pendingSessionId,
@@ -204,11 +319,12 @@ describe('service runtime isolation', () => {
       title: 'Fast completion claim',
       lastActiveAt: new Date(pendingTimestamp),
     });
-    workItemEvidenceRepository.createSessionLink({
-      workItemId: pendingWorkItem.id,
-      agentSessionId: pendingAgentSession.id,
-      linkSource: 'user',
-    });
+    taskDispatchRepository.claimAgentSession(
+      pendingDispatch.id,
+      pendingWorkItem.id,
+      pendingAgentSession.id,
+      pendingSessionId
+    );
     reconcileLinkedAgentSessions();
     expect(
       workItemEvidenceRepository.findLatestExplicitCompletionForAgentSession(
