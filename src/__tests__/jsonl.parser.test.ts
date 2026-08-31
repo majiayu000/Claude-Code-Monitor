@@ -151,6 +151,33 @@ describe('JSONL Session Parser', () => {
     expect(parsed!.usageStats?.totalCost).toBeCloseTo(0.001503, 8);
   });
 
+  test('uses the latest real user task across injected context messages', async () => {
+    const messages = [
+      '<recommended_plugins>plugin catalog</recommended_plugins>',
+      '# AGENTS.md instructions for /tmp/project\n\n<INSTRUCTIONS>rules</INSTRUCTIONS>',
+      '<environment_context>\n<cwd>/tmp/project</cwd>\n</environment_context>',
+      'Inspect the Claude session title boundary',
+      '继续',
+      '# AGENTS.md instructions for /tmp/project\n\n<INSTRUCTIONS>compacted rules</INSTRUCTIONS>',
+      'Fix the Claude session title boundary',
+      '继续。',
+    ];
+    const filePath = createJsonlFile(messages.map((content, index) => ({
+      type: 'user',
+      uuid: `user-${index}`,
+      sessionId: 'session-context-boundary',
+      cwd: '/tmp/project',
+      timestamp: `2026-04-13T10:00:0${index}.000Z`,
+      userType: 'external',
+      message: { role: 'user', content },
+    })));
+
+    const parsed = await parseSessionFile(filePath);
+
+    expect(parsed?.firstMessage).toBe('Fix the Claude session title boundary');
+    expect(parsed?.messageCount).toBe(8);
+  });
+
   test('uses system command fallback and sub-agent metadata when no external user message exists', async () => {
     const filePath = createJsonlFile([
       {

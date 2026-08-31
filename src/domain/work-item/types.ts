@@ -91,6 +91,8 @@ export interface WorkItem {
   areaId?: string;
   area?: string;
   statusSource: WorkItemStatusSource;
+  externalSource?: string;
+  externalId?: string;
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
@@ -104,6 +106,8 @@ export interface WorkItemCreateInput {
   projectRoot?: string;
   area?: string;
   statusSource?: WorkItemStatusSource;
+  externalSource?: string;
+  externalId?: string;
 }
 
 export interface WorkItemUpdateInput {
@@ -229,6 +233,66 @@ export interface WorkboardItemProjection {
   waitingOnSession?: WorkboardAgentSessionSummary;
   acceptedSessions: WorkboardAgentSessionSummary[];
   suggestions: WorkboardSuggestion[];
+  completionSuggestion?: WorkItemCompletionSuggestion;
+}
+
+export type CompletionReviewDecision = 'accepted' | 'rejected';
+
+export interface CompletionReview {
+  id: string;
+  workItemId: string;
+  evidenceId: string;
+  decision: CompletionReviewDecision;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface WorkItemCompletionSuggestion {
+  evidenceId: string;
+  summary: string;
+  occurredAt: Date;
+}
+
+export const TASK_DISPATCH_STATES = [
+  'queued',
+  'launching',
+  'awaiting_session',
+  'linked',
+  'ambiguous',
+  'failed',
+  'cancelled',
+] as const;
+
+export type TaskDispatchState = typeof TASK_DISPATCH_STATES[number];
+
+export interface TaskDispatch {
+  id: string;
+  workItemId: string;
+  runtimeId: RuntimeId;
+  cwd: string;
+  prompt: string;
+  terminalApp: 'Terminal' | 'iTerm' | 'Warp' | 'auto';
+  idempotencyKey: string;
+  state: TaskDispatchState;
+  preLaunchSessionIds: string[];
+  candidateSessionIds: string[];
+  linkedAgentSessionId?: string;
+  error?: string;
+  launchedAt?: Date;
+  correlationDeadlineAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface TaskDispatchCreateInput {
+  workItemId: string;
+  runtimeId: RuntimeId;
+  cwd: string;
+  prompt: string;
+  terminalApp: TaskDispatch['terminalApp'];
+  idempotencyKey: string;
+  preLaunchSessionIds: string[];
+  correlationDeadlineAt: Date;
 }
 
 export interface WorkboardProjection {

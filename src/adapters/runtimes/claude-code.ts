@@ -5,13 +5,13 @@
 import type { ParsedSessionData } from '../../domain/session/index.js';
 import type {
   AgentRuntimeAdapter,
-  RuntimeDescriptor,
   RuntimeRecoveryOptions,
   RuntimeScanError,
   RuntimeScanOptions,
   RuntimeScanResult,
   RuntimeSession,
 } from '../../domain/runtime/index.js';
+import { CLAUDE_CODE_DESCRIPTOR } from '../../domain/runtime/descriptors.js';
 import { buildClaudeCommandArgs } from '../../services/recovery.service.js';
 import {
   getAllSessionsWithFailures as getAllClaudeSessionsWithFailures,
@@ -32,23 +32,6 @@ interface ClaudeRuntimeScanSourceResult {
 export type ClaudeCodeSessionScanner = (
   options?: ScanOptions
 ) => Promise<ParsedSessionData[] | ClaudeRuntimeScanSourceResult>;
-
-export const CLAUDE_CODE_DESCRIPTOR: RuntimeDescriptor = {
-  id: 'claude-code',
-  displayName: 'Claude Code',
-  kind: 'cli',
-  executableNames: ['claude', 'claude-code'],
-  sessionPathHints: [
-    '~/.claude/projects/<project>/<session>.jsonl',
-    '~/.claude-work/projects/<project>/<session>.jsonl',
-  ],
-  capabilities: ['session-history', 'process-scan', 'resume', 'quota', 'plans', 'hooks'],
-  compatibilityRoutes: {
-    quota: ['/api/quota'],
-    plans: ['/api/plans'],
-    hooks: ['keepline hooks install', 'keepline hooks status'],
-  },
-};
 
 export class ClaudeCodeRuntimeAdapter implements AgentRuntimeAdapter {
   readonly descriptor = CLAUDE_CODE_DESCRIPTOR;

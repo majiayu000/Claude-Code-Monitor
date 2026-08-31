@@ -36,6 +36,7 @@ export type KeeplineEvents = {
   'session:recovered': SessionEventPayload;
   'session:completed': SessionEventPayload;
   'session:end': SessionEndEventPayload;
+  'session:turn-ended': SessionEndEventPayload;
 
   // Tool events (from hooks)
   'tool:pre': ToolEventPayload;
@@ -45,6 +46,7 @@ export type KeeplineEvents = {
   'daemon:started': { pid: number };
   'daemon:stopped': { reason: string };
   'scan:complete': { sessionCount: number; duration: number };
+  'dispatch:created': { dispatchId: string };
   'error': { error: Error; context: string };
 };
 

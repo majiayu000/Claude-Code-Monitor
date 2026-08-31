@@ -3,21 +3,7 @@
  */
 
 import { Command } from 'commander';
-import { listCommand } from './list.js'; // Note: actually list.tsx
-import { watchCommand } from './watch.js';
-import { recoverCommand, recoverListCommand } from './recover.js';
-import { daemonCommand } from './daemon.js';
-import { statusCommand } from './status.js';
-import { webCommand } from './web.js';
-import { overviewCommand } from './overview.js';
 import { DEFAULT_WEB_PORT } from '../lib/config.js';
-import {
-  memoryListCommand,
-  memoryShowCommand,
-  memoryEditCommand,
-  memoryDeleteCommand,
-  memoryExportCommand,
-} from './memory.js';
 
 export function registerCommands(program: Command): void {
   // List sessions
@@ -30,7 +16,7 @@ export function registerCommands(program: Command): void {
     .option('-l, --limit <n>', 'Limit results')
     .option('-a, --all', 'Include completed sessions')
     .option('--style <style>', 'UI style: cyber (default), minimal, dashboard, neon, macos')
-    .action(listCommand);
+    .action(async (options) => (await import('./list.js')).listCommand(options));
 
   // Watch sessions (live)
   program
@@ -38,7 +24,7 @@ export function registerCommands(program: Command): void {
     .alias('w')
     .description('Live monitor agent runtime sessions')
     .option('-i, --interval <seconds>', 'Refresh interval in seconds')
-    .action(watchCommand);
+    .action(async (options) => (await import('./watch.js')).watchCommand(options));
 
   // Recover session
   program
@@ -50,6 +36,7 @@ export function registerCommands(program: Command): void {
     .option('-a, --terminal-app <app>', 'Terminal app to use (Terminal, iTerm, Warp, auto)')
     .option('--skip-permissions', 'Use the owning CLI unsafe permission bypass flag')
     .action(async (session, options) => {
+      const { recoverCommand, recoverListCommand } = await import('./recover.js');
       if (!session) {
         await recoverListCommand();
       } else {
@@ -63,13 +50,13 @@ export function registerCommands(program: Command): void {
     .alias('d')
     .description('Manage background daemon (start, stop, restart, status)')
     .option('--hooks', 'Install/uninstall Claude-compatible hooks with daemon')
-    .action(daemonCommand);
+    .action(async (action, options) => (await import('./daemon.js')).daemonCommand(action, options));
 
   // Status
   program
     .command('status')
     .description('Show system status')
-    .action(statusCommand);
+    .action(async () => (await import('./status.js')).statusCommand());
 
   // Orchestrator overview
   program
@@ -82,7 +69,7 @@ export function registerCommands(program: Command): void {
     .option('--stale-hours <hours>', 'Hours without activity before stale reason')
     .option('--lost-hours <hours>', 'Hours a lost session remains in the default recovery queue')
     .option('--include-old-lost', 'Include lost sessions outside the recovery window')
-    .action(overviewCommand);
+    .action(async (options) => (await import('./overview.js')).overviewCommand(options));
 
   // Hooks management
   program
@@ -138,7 +125,18 @@ export function registerCommands(program: Command): void {
     .command('web')
     .description('Start the web UI server')
     .option('-p, --port <port>', `Port to listen on (default: ${DEFAULT_WEB_PORT})`)
-    .action(webCommand);
+    .action(async (options) => (await import('./web.js')).webCommand(options));
+
+  program
+    .command('service')
+    .description('Start the lightweight local API service')
+    .option('-p, --port <port>', 'Port to listen on (default: 3377)')
+    .option('--scan-interval <seconds>', 'Periodic transcript scan interval (default: 60; 0 disables)')
+    .action(async (options) => (await import('./service.js')).serviceCommand(options));
+
+  program
+    .command('_service-scan', { hidden: true })
+    .action(async () => (await import('./service-scan.js')).serviceScanCommand());
 
   // Memory management (relay race pattern)
   const memoryCmd = program
@@ -152,14 +150,14 @@ export function registerCommands(program: Command): void {
     .description('List all session memories')
     .option('-d, --directory <dir>', 'Filter by directory')
     .option('-l, --limit <n>', 'Limit results (default: 10)')
-    .action(memoryListCommand);
+    .action(async (options) => (await import('./memory.js')).memoryListCommand(options));
 
   memoryCmd
     .command('show <session>')
     .description('Show memory details for a session')
     .option('-v, --verbose', 'Show all details')
     .option('-c, --context', 'Show recovery context')
-    .action(memoryShowCommand);
+    .action(async (session, options) => (await import('./memory.js')).memoryShowCommand(session, options));
 
   memoryCmd
     .command('edit <session>')
@@ -174,17 +172,17 @@ export function registerCommands(program: Command): void {
     .option('-P, --priority <item>', 'Add a priority item for handoff')
     .option('-n, --notes <text>', 'Set general notes')
     .option('--clear', 'Clear all memory fields')
-    .action(memoryEditCommand);
+    .action(async (session, options) => (await import('./memory.js')).memoryEditCommand(session, options));
 
   memoryCmd
     .command('delete <session>')
     .description('Delete session memory')
     .option('-f, --force', 'Confirm deletion')
-    .action(memoryDeleteCommand);
+    .action(async (session, options) => (await import('./memory.js')).memoryDeleteCommand(session, options));
 
   memoryCmd
     .command('export <session>')
     .description('Export memory as recovery context')
     .option('-o, --output <file>', 'Output file (default: stdout)')
-    .action(memoryExportCommand);
+    .action(async (session, options) => (await import('./memory.js')).memoryExportCommand(session, options));
 }

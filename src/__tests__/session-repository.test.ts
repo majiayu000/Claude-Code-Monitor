@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { resetDatabase } from '../db/migrations.js';
 import { closeDatabase } from '../infrastructure/database/sqlite.js';
 import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
+import { workItemEvidenceRepository } from '../infrastructure/database/repositories/work-item-evidence.repository.js';
+import { workItemRepository } from '../infrastructure/database/repositories/work-item.repository.js';
 
 describe('Session Repository Upsert', () => {
   beforeEach(() => {
@@ -177,5 +179,73 @@ describe('Session Repository Upsert', () => {
     expect(fetched?.parentSessionId).toBeUndefined();
     expect(fetched?.usageStats).toBeUndefined();
     expect(fetched?.toolCalls).toBeUndefined();
+  });
+
+  test('keeps unobserved historical lost sessions out of the operational view', () => {
+    const base = {
+      directory: '/tmp/repo',
+      title: 'Session',
+      initialPrompt: 'Prompt',
+      lastActiveAt: new Date('2026-04-13T15:00:00.000Z'),
+      toolCount: 0,
+      messageCount: 1,
+    };
+
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'historical-lost',
+      status: 'lost',
+    });
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'observed-lost',
+      status: 'lost',
+      wasProcessObserved: true,
+    });
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'current-running',
+      status: 'running',
+    });
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'explicitly-completed',
+      status: 'completed',
+    });
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'linked-fast-exit',
+      client: 'codex',
+      status: 'lost',
+    });
+    const linkedItem = workItemRepository.create({ title: 'Keep linked fast exit visible' });
+    const linkedAgentSession = workItemEvidenceRepository.upsertAgentSession({
+      runtimeId: 'codex',
+      runtimeSessionId: 'linked-fast-exit',
+      cwd: base.directory,
+      status: 'lost',
+      title: base.title,
+    });
+    workItemEvidenceRepository.createSessionLink({
+      workItemId: linkedItem.id,
+      agentSessionId: linkedAgentSession.id,
+      linkSource: 'user',
+    });
+
+    expect(sessionRepository.findAll()).toHaveLength(5);
+    expect(sessionRepository.findOperational().map((session) => session.sessionId).sort()).toEqual([
+      'current-running',
+      'explicitly-completed',
+      'linked-fast-exit',
+      'observed-lost',
+    ]);
+    expect(
+      sessionRepository.findOperationalLightweight().map((session) => session.sessionId).sort()
+    ).toEqual([
+      'current-running',
+      'explicitly-completed',
+      'linked-fast-exit',
+      'observed-lost',
+    ]);
   });
 });

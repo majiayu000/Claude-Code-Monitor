@@ -42,3 +42,4 @@ export { sessionDigestRepository } from './repositories/session-digest.repositor
 export type {
   ISessionDigestRepository,
 } from './repositories/session-digest.repository.js';
+export { taskDispatchRepository } from './repositories/task-dispatch.repository.js';

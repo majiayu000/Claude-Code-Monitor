@@ -43,14 +43,16 @@
   "scripts": {
     "build": "bun run build:client && bun run build:server",
     "build:client": "cd src/web/client && bun run build",
-    "build:server": "bun build src/index.ts --outdir dist --target bun",
+    "build:server": "bun build src/index.ts --outdir dist --target bun --splitting",
+    "build:embedded-service": "bun build --compile src/embedded-service.ts --outfile dist/keepline-service",
     "dev": "bun run src/index.ts",
     "dev:client": "cd src/web/client && bun run dev",
     "start": "bun dist/index.js",
     "web": "bun dist/index.js web",
     "typecheck": "bun x tsc --noEmit && cd src/web/client && bun run typecheck",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
+    "test": "bun test --preload ./src/__tests__/test-preload.ts",
+    "test:watch": "bun test --watch --preload ./src/__tests__/test-preload.ts",
+    "test:sdk:swift": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path sdk/swift",
     "prepublishOnly": "bun run build"
   },
   "dependencies": {
@@ -60,7 +62,6 @@
     "@lancedb/lancedb": "^0.23.0",
     "@types/react": "^19.2.7",
     "apache-arrow": "^21.1.0",
-    "bun-pty": "^0.4.8",
     "chalk": "^5.3.0",
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
@@ -74,7 +75,7 @@
     "otpauth": "^9.5.0"
   },
   "devDependencies": {
-    "@types/bun": "^1.1.14",
+    "@types/bun": "1.3.14",
     "@types/node": "^22.10.1",
     "react-devtools-core": "^7.0.1",
     "typescript": "^5.7.2"

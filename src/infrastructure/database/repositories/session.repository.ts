@@ -70,6 +70,23 @@ interface SessionListRow {
   updated_at: string;
 }
 
+const OPERATIONAL_SESSION_FILTER = `
+  status != 'lost'
+  OR was_process_observed = 1
+  OR EXISTS (
+    SELECT 1
+    FROM agent_sessions
+    INNER JOIN work_item_session_links
+      ON work_item_session_links.agent_session_id = agent_sessions.id
+    WHERE agent_sessions.runtime_session_id = sessions.session_id
+      AND work_item_session_links.acceptance_status = 'accepted'
+      AND (
+        (sessions.client = 'codex' AND agent_sessions.runtime_id = 'codex')
+        OR (sessions.client = 'claude' AND agent_sessions.runtime_id = 'claude-code')
+      )
+  )
+`;
+
 interface ActiveSessionRow {
   session_id: string;
   client: string;
@@ -239,6 +256,19 @@ class SessionRepository implements ISessionRepository {
     return rows.map(rowToSession);
   }
 
+  findOperational(): Session[] {
+    const db = getDatabase();
+    const rows = db
+      .prepare(`
+        SELECT * FROM sessions
+        WHERE ${OPERATIONAL_SESSION_FILTER}
+        ORDER BY last_active_at DESC
+      `)
+      .all() as SessionRow[];
+
+    return rows.map(rowToSession);
+  }
+
   findAllLightweight(): SessionListItem[] {
     const db = getDatabase();
     const rows = db
@@ -265,6 +295,40 @@ class SessionRepository implements ISessionRepository {
           created_at,
           updated_at
         FROM sessions
+        ORDER BY last_active_at DESC
+      `)
+      .all() as SessionListRow[];
+
+    return rows.map(rowToSessionListItem);
+  }
+
+  findOperationalLightweight(): SessionListItem[] {
+    const db = getDatabase();
+    const rows = db
+      .prepare(`
+        SELECT
+          id,
+          session_id,
+          client,
+          directory,
+          status,
+          title,
+          started_at,
+          last_active_at,
+          completed_at,
+          pid,
+          tty,
+          tool_count,
+          message_count,
+          total_input_tokens,
+          total_output_tokens,
+          total_tokens,
+          total_cost,
+          api_calls,
+          created_at,
+          updated_at
+        FROM sessions
+        WHERE ${OPERATIONAL_SESSION_FILTER}
         ORDER BY last_active_at DESC
       `)
       .all() as SessionListRow[];
@@ -331,6 +395,7 @@ class SessionRepository implements ISessionRepository {
       const hasParentSessionId = 'parentSessionId' in data;
       const hasUsageStats = 'usageStats' in data;
       const hasToolCalls = 'toolCalls' in data;
+      const hasWasProcessObserved = 'wasProcessObserved' in data;
       const updateResult = db.prepare(`
         UPDATE sessions SET
           status = COALESCE(?, status),
@@ -357,6 +422,7 @@ class SessionRepository implements ISessionRepository {
           total_cost = CASE WHEN ? THEN ? ELSE total_cost END,
           api_calls = CASE WHEN ? THEN ? ELSE api_calls END,
           tool_calls = CASE WHEN ? THEN ? ELSE tool_calls END,
+          was_process_observed = CASE WHEN ? THEN ? ELSE was_process_observed END,
           updated_at = ?
         WHERE session_id = ?
       `).run(
@@ -399,6 +465,8 @@ class SessionRepository implements ISessionRepository {
         data.usageStats?.apiCalls ?? null,
         hasToolCalls ? 1 : 0,
         data.toolCalls ? JSON.stringify(data.toolCalls) : null,
+        hasWasProcessObserved ? 1 : 0,
+        data.wasProcessObserved ? 1 : 0,
         now,
         data.sessionId
       );
@@ -420,8 +488,9 @@ class SessionRepository implements ISessionRepository {
             agent_id, parent_session_id, is_sub_agent,
             total_input_tokens, total_output_tokens, total_tokens, total_cost, api_calls,
             tool_calls,
+            was_process_observed,
             created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           id,
           data.sessionId,
@@ -450,6 +519,7 @@ class SessionRepository implements ISessionRepository {
           data.usageStats?.totalCost ?? null,
           data.usageStats?.apiCalls ?? null,
           data.toolCalls ? JSON.stringify(data.toolCalls) : null,
+          data.wasProcessObserved ? 1 : 0,
           now,
           now
         );

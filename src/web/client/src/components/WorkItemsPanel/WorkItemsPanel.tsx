@@ -51,6 +51,8 @@ export function WorkItemsPanel({ token }: WorkItemsPanelProps) {
     createItem,
     updateItem,
     deleteItem,
+    reviewCompletion,
+    reviewSessionLink,
   } = useWorkItems(token)
   const [view, setView] = useState<WorkItemsView>('workboard')
   const [title, setTitle] = useState('')
@@ -200,6 +202,8 @@ export function WorkItemsPanel({ token }: WorkItemsPanelProps) {
           workboard={workboard}
           setItemStatus={setItemStatus}
           deleteItem={deleteItem}
+          reviewCompletion={reviewCompletion}
+          reviewSessionLink={reviewSessionLink}
         />
       ) : visibleItems.length === 0 ? (
         <div className={styles.emptyState}>No work items</div>
@@ -211,6 +215,8 @@ export function WorkItemsPanel({ token }: WorkItemsPanelProps) {
               item={item}
               setItemStatus={setItemStatus}
               deleteItem={deleteItem}
+              reviewCompletion={reviewCompletion}
+              reviewSessionLink={reviewSessionLink}
             />
           ))}
         </div>
@@ -223,10 +229,14 @@ function WorkboardView({
   workboard,
   setItemStatus,
   deleteItem,
+  reviewCompletion,
+  reviewSessionLink,
 }: {
   workboard: WorkboardData;
   setItemStatus: (item: WorkItem, nextStatus: WorkItemStatus) => void;
   deleteItem: (id: string) => void;
+  reviewCompletion: (id: string, evidenceId: string, decision: 'accepted' | 'rejected') => void;
+  reviewSessionLink: (linkId: string, decision: 'accept' | 'reject') => void;
 }) {
   return (
     <div className={styles.workboard}>
@@ -235,24 +245,32 @@ function WorkboardView({
         items={workboard.now}
         setItemStatus={setItemStatus}
         deleteItem={deleteItem}
+        reviewCompletion={reviewCompletion}
+        reviewSessionLink={reviewSessionLink}
       />
       <WorkboardSection
         title="Waiting"
         items={workboard.waiting}
         setItemStatus={setItemStatus}
         deleteItem={deleteItem}
+        reviewCompletion={reviewCompletion}
+        reviewSessionLink={reviewSessionLink}
       />
       <WorkboardSection
         title="Stale"
         items={workboard.stale}
         setItemStatus={setItemStatus}
         deleteItem={deleteItem}
+        reviewCompletion={reviewCompletion}
+        reviewSessionLink={reviewSessionLink}
       />
       <WorkboardSection
         title="Done"
         items={workboard.done}
         setItemStatus={setItemStatus}
         deleteItem={deleteItem}
+        reviewCompletion={reviewCompletion}
+        reviewSessionLink={reviewSessionLink}
       />
       {workboard.suggestions.length > 0 && (
         <section className={styles.suggestionSection}>
@@ -268,6 +286,8 @@ function WorkboardView({
                 projection={projection}
                 setItemStatus={setItemStatus}
                 deleteItem={deleteItem}
+                reviewCompletion={reviewCompletion}
+                reviewSessionLink={reviewSessionLink}
               />
             ))}
           </div>
@@ -282,11 +302,15 @@ function WorkboardSection({
   items,
   setItemStatus,
   deleteItem,
+  reviewCompletion,
+  reviewSessionLink,
 }: {
   title: string;
   items: WorkboardItemProjection[];
   setItemStatus: (item: WorkItem, nextStatus: WorkItemStatus) => void;
   deleteItem: (id: string) => void;
+  reviewCompletion: (id: string, evidenceId: string, decision: 'accepted' | 'rejected') => void;
+  reviewSessionLink: (linkId: string, decision: 'accept' | 'reject') => void;
 }) {
   return (
     <section className={styles.boardSection}>
@@ -305,6 +329,8 @@ function WorkboardSection({
               projection={projection}
               setItemStatus={setItemStatus}
               deleteItem={deleteItem}
+              reviewCompletion={reviewCompletion}
+              reviewSessionLink={reviewSessionLink}
             />
           ))}
         </div>
@@ -318,11 +344,15 @@ function WorkItemCard({
   projection,
   setItemStatus,
   deleteItem,
+  reviewCompletion,
+  reviewSessionLink,
 }: {
   item: WorkItem;
   projection?: WorkboardItemProjection;
   setItemStatus: (item: WorkItem, nextStatus: WorkItemStatus) => void;
   deleteItem: (id: string) => void;
+  reviewCompletion: (id: string, evidenceId: string, decision: 'accepted' | 'rejected') => void;
+  reviewSessionLink: (linkId: string, decision: 'accept' | 'reject') => void;
 }) {
   return (
     <article className={styles.itemCard}>
@@ -345,6 +375,22 @@ function WorkItemCard({
         {projection?.progressSummary && (
           <p className={styles.progressLine}>{projection.progressSummary}</p>
         )}
+        {projection?.completionSuggestion && (
+          <div className={styles.reviewCard}>
+            <div>
+              <strong>Agent reports this work is finished</strong>
+              <p>{projection.completionSuggestion.summary}</p>
+            </div>
+            <div className={styles.reviewActions}>
+              <button type="button" onClick={() => reviewCompletion(item.id, projection.completionSuggestion!.evidenceId, 'rejected')}>
+                Keep open
+              </button>
+              <button type="button" className={styles.acceptAction} onClick={() => reviewCompletion(item.id, projection.completionSuggestion!.evidenceId, 'accepted')}>
+                Complete
+              </button>
+            </div>
+          </div>
+        )}
         <div className={styles.metaRow}>
           {item.area && <span>{item.area}</span>}
           {item.projectRoot && <span className={styles.path}>{item.projectRoot}</span>}
@@ -362,7 +408,9 @@ function WorkItemCard({
             ))}
             {projection.suggestions.map((suggestion) => (
               <span key={suggestion.linkId} className={styles.suggestionPill}>
-                Suggestion / {suggestion.agentSession.runtimeId} / {suggestion.agentSession.status}
+                {suggestion.agentSession.runtimeId} / {suggestion.agentSession.status}
+                <button type="button" onClick={() => reviewSessionLink(suggestion.linkId, 'reject')}>Dismiss</button>
+                <button type="button" onClick={() => reviewSessionLink(suggestion.linkId, 'accept')}>Link</button>
               </span>
             ))}
           </div>

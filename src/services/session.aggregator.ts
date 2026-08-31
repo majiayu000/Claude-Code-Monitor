@@ -22,7 +22,7 @@ export class SessionAggregator {
 
   /** Get all sessions with aggregated process info (uses cached processes) */
   getAggregatedSessions(): AggregatedSession[] {
-    const sessions = this.repository.findAll();
+    const sessions = this.repository.findOperational();
     const processes = getCachedProcesses();
     const processMatches = matchProcessesToSessions(sessions, processes);
 
@@ -43,7 +43,7 @@ export class SessionAggregator {
 
   /** Get lightweight sessions with aggregated process info for dashboard list/realtime updates */
   getAggregatedSessionsBasic(): BasicAggregatedSession[] {
-    const sessions = this.repository.findAllLightweight();
+    const sessions = this.repository.findOperationalLightweight();
     const processes = getCachedProcesses();
     const processMatches = matchProcessesToSessions(sessions, processes);
 
@@ -60,6 +60,26 @@ export class SessionAggregator {
       };
     });
   }
+
+  /**
+   * Read the service-owned snapshot without running a second process scan.
+   * Service Mode persists live status and pid data during its isolated scan.
+   */
+  getPersistedSessionsBasic(): BasicAggregatedSession[] {
+    return this.repository.findOperationalLightweight().map((session) => ({
+      ...session,
+      processRunning: Boolean(session.pid) &&
+        session.status !== 'completed' && session.status !== 'lost',
+    }));
+  }
+
+  getPersistedSessions(): AggregatedSession[] {
+    return this.repository.findOperational().map((session) => ({
+      ...session,
+      processRunning: Boolean(session.pid) &&
+        session.status !== 'completed' && session.status !== 'lost',
+    }));
+  }
 }
 
 export const sessionAggregator = new SessionAggregator(sessionRepository);
@@ -68,6 +88,10 @@ export const getAggregatedSessions =
   sessionAggregator.getAggregatedSessions.bind(sessionAggregator);
 export const getAggregatedSessionsBasic =
   sessionAggregator.getAggregatedSessionsBasic.bind(sessionAggregator);
+export const getPersistedSessionsBasic =
+  sessionAggregator.getPersistedSessionsBasic.bind(sessionAggregator);
+export const getPersistedSessions =
+  sessionAggregator.getPersistedSessions.bind(sessionAggregator);
 
 /** Filter sessions */
 export function filterSessions(

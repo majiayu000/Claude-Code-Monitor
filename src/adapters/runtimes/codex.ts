@@ -4,13 +4,13 @@
 
 import type {
   AgentRuntimeAdapter,
-  RuntimeDescriptor,
   RuntimeRecoveryOptions,
   RuntimeScanError,
   RuntimeScanOptions,
   RuntimeScanResult,
   RuntimeSession,
 } from '../../domain/runtime/index.js';
+import { CODEX_DESCRIPTOR } from '../../domain/runtime/descriptors.js';
 import { buildCodexCommandArgs } from '../../services/recovery.service.js';
 import { scopeCodexSessionId } from '../codex/parser.js';
 import {
@@ -33,18 +33,6 @@ interface CodexRuntimeScanSourceResult {
 export type CodexSessionScanner = (
   options?: CodexScanOptions
 ) => Promise<CodexParsedSessionData[] | CodexRuntimeScanSourceResult>;
-
-export const CODEX_DESCRIPTOR: RuntimeDescriptor = {
-  id: 'codex',
-  displayName: 'Codex',
-  kind: 'cli',
-  executableNames: ['codex'],
-  sessionPathHints: ['~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl'],
-  capabilities: ['session-history', 'process-scan', 'resume', 'quota'],
-  compatibilityRoutes: {
-    quota: ['/api/codex/quota'],
-  },
-};
 
 export class CodexRuntimeAdapter implements AgentRuntimeAdapter {
   readonly descriptor = CODEX_DESCRIPTOR;

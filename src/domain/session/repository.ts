@@ -51,6 +51,8 @@ export interface SessionUpsertData {
   isSubAgent?: boolean;
   usageStats?: SessionUsageStats;
   toolCalls?: ToolCallInfo[];
+  /** Durable provenance for Lost: true only after a process was actually matched. */
+  wasProcessObserved?: boolean;
 }
 
 /** Session repository interface */
@@ -70,8 +72,14 @@ export interface ISessionRepository {
   /** Find all sessions */
   findAll(): Session[];
 
+  /** Find sessions eligible for the live operational view. */
+  findOperational(): Session[];
+
   /** Find all sessions with only fields needed for list/realtime payloads */
   findAllLightweight(): SessionListItem[];
+
+  /** Find lightweight sessions eligible for the live operational view. */
+  findOperationalLightweight(): SessionListItem[];
 
   /** Find active sessions (not completed or lost) */
   findActive(): Session[];

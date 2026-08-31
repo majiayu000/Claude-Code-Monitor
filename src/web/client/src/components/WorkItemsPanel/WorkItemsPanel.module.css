@@ -292,6 +292,43 @@
   font-size: var(--text-xs);
 }
 
+.suggestionPill button {
+  margin-left: var(--space-xs);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.reviewCard {
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  border: 1px solid color-mix(in srgb, var(--success) 45%, var(--border));
+  border-left: 3px solid var(--success);
+  background: color-mix(in srgb, var(--success) 6%, var(--bg-surface));
+  border-radius: var(--radius-sm);
+}
+
+.reviewCard strong { color: var(--text-bright); font-size: var(--text-sm); }
+.reviewCard p { margin-top: 4px; color: var(--text-dim); font-size: var(--text-xs); }
+.reviewActions { display: flex; gap: var(--space-xs); flex-shrink: 0; }
+.reviewActions button {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+}
+.reviewActions .acceptAction { border-color: var(--success); color: var(--success); }
+
 .suggestionPill {
   color: var(--warning);
   border-color: var(--warning);

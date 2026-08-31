@@ -99,6 +99,22 @@ export function getRuntimeScanStatus(): RuntimeScanSummary[] {
   );
 }
 
+/** Replace scan status with a validated snapshot from the isolated service scanner. */
+export function replaceRuntimeScanStatus(summaries: RuntimeScanSummary[]): void {
+  latestRuntimeScan.clear();
+  for (const runtimeId of SESSION_RUNTIME_IDS) {
+    const summary = summaries.find((entry) => entry.runtimeId === runtimeId);
+    if (!summary) continue;
+    latestRuntimeScan.set(runtimeId, {
+      runtimeId,
+      degraded: summary.degraded === true,
+      errorCount: Number.isFinite(summary.errorCount) ? Math.max(0, summary.errorCount) : 0,
+      errors: Array.isArray(summary.errors) ? summary.errors.slice(0, 10) : [],
+      lastScanAt: typeof summary.lastScanAt === 'string' ? summary.lastScanAt : undefined,
+    });
+  }
+}
+
 export function clearRuntimeScanStatus(): void {
   latestRuntimeScan.clear();
 }

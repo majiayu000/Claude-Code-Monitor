@@ -149,6 +149,42 @@ describe('Codex JSONL parser', () => {
     ]);
   });
 
+  test('uses the latest real user task across injected Codex context', async () => {
+    const filePath = createCodexJsonlFile([
+      {
+        type: 'session_meta',
+        timestamp: '2026-06-17T01:00:00.000Z',
+        payload: {
+          id: '019ed4a3-2186-7e51-9aa1-ca1e376549b8',
+          cwd: '/tmp/codex-project',
+        },
+      },
+      ...[
+        '<recommended_plugins>plugin catalog</recommended_plugins>',
+        '# AGENTS.md instructions for /tmp/codex-project\n\n<INSTRUCTIONS>rules</INSTRUCTIONS>',
+        '<environment_context>\n<cwd>/tmp/codex-project</cwd>\n</environment_context>',
+        'Inspect the session title boundary',
+        '继续',
+        '# AGENTS.md instructions for /tmp/codex-project\n\n<INSTRUCTIONS>compacted rules</INSTRUCTIONS>',
+        'Fix the session title boundary',
+        '继续。',
+      ].map((text, index) => ({
+        type: 'response_item',
+        timestamp: `2026-06-17T01:00:0${index + 1}.000Z`,
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text }],
+        },
+      })),
+    ]);
+
+    const parsed = await parseCodexSessionFile(filePath);
+
+    expect(parsed?.firstMessage).toBe('Fix the session title boundary');
+    expect(parsed?.messageCount).toBe(8);
+  });
+
   test('skips a truncated final JSONL line while preserving parsed session data', async () => {
     const filePath = createCodexJsonlFile([
       {

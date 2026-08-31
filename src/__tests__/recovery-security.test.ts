@@ -49,7 +49,9 @@ function createRepository(session: Session | null): ISessionRepository {
         title: session.title,
       }] : [],
     findAll: () => session ? [session] : [],
+    findOperational: () => session ? [session] : [],
     findAllLightweight: () => [],
+    findOperationalLightweight: () => [],
     findActive: () => session ? [session] : [],
     findActiveLightweight: (): ActiveSessionRecord[] => [],
     findByStatus: (status: SessionStatus) =>

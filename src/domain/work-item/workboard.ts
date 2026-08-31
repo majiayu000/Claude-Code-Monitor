@@ -1,5 +1,6 @@
 import type {
   AgentSession,
+  CompletionReview,
   ProgressEvidence,
   WorkboardAgentSessionSummary,
   WorkboardBucketId,
@@ -16,6 +17,7 @@ export interface BuildWorkboardProjectionInput {
   links: WorkItemSessionLink[];
   agentSessions: AgentSession[];
   evidence: ProgressEvidence[];
+  reviews?: CompletionReview[];
   now?: Date;
   staleWindowHours?: number;
 }
@@ -54,6 +56,7 @@ export function buildWorkboardProjection(
       links: linksByWorkItemId.get(item.id) ?? [],
       sessionsById,
       evidence: allEvidence,
+      reviews: input.reviews ?? [],
       staleCutoffMs,
     });
 
@@ -82,6 +85,7 @@ function evaluateWorkItem(input: {
   links: WorkItemSessionLink[];
   sessionsById: Map<string, AgentSession>;
   evidence: ProgressEvidence[];
+  reviews: CompletionReview[];
   staleCutoffMs: number;
 }): WorkboardEvaluation {
   const acceptedLinks = input.links.filter((link) => link.acceptanceStatus === 'accepted');
@@ -94,6 +98,18 @@ function evaluateWorkItem(input: {
     isEvidenceRelevantToItem(record, input.item.id, acceptedSessionIds)
   );
   const progressEvidence = [...relevantEvidence].sort(compareEvidenceByRecency)[0];
+  const reviewedEvidenceIds = new Set(
+    input.reviews
+      .filter((review) => review.workItemId === input.item.id)
+      .map((review) => review.evidenceId)
+  );
+  const completionEvidence = [...relevantEvidence]
+    .filter((record) =>
+      record.outcome === 'completed' &&
+      record.confidence === 'explicit' &&
+      !reviewedEvidenceIds.has(record.id)
+    )
+    .sort(compareEvidenceByRecency)[0];
   const activityDates = [
     ...acceptedSessions.map((session) => session.lastActiveAt),
     ...relevantEvidence.map((record) => record.occurredAt),
@@ -119,6 +135,11 @@ function evaluateWorkItem(input: {
     lastActivityAt,
     acceptedSessions: acceptedSessions.map(summarizeSession).sort(compareSessionSummaries),
     suggestions,
+    completionSuggestion: completionEvidence ? {
+      evidenceId: completionEvidence.id,
+      summary: completionEvidence.summary,
+      occurredAt: completionEvidence.occurredAt,
+    } : undefined,
   };
 
   if (input.item.status === 'done') {

@@ -6,11 +6,7 @@
 
 import { Hono } from 'hono';
 import { syncSessions, getAllSessions } from '../../../services/session.service.js';
-import {
-  getAggregatedSessions,
-  getAggregatedSessionsBasic,
-  getSessionStats,
-} from '../../../services/session.aggregator.js';
+import { getSessionStats } from '../../../services/session.aggregator.js';
 import { isProcessRunning } from '../../../adapters/process/scanner.js';
 import {
   getSessionById as getClaudeSessionById,
@@ -30,6 +26,11 @@ import {
   parseRuntimeFilter,
   runtimeIdForClient,
 } from '../../../services/runtime-status.js';
+import {
+  getWebSessions,
+  getWebSessionsBasic,
+  getWebSessionSource,
+} from '../session-source.js';
 
 const app = new Hono();
 app.use('*', authMiddleware);
@@ -187,17 +188,18 @@ app.get('/', async (c) => {
 
     // Smart sync: trigger background sync if needed (non-blocking)
     const now = Date.now();
-    if (!skipSync && (now - lastSyncTime > SYNC_INTERVAL_MS)) {
+    if (getWebSessionSource() === 'standalone' &&
+        !skipSync && (now - lastSyncTime > SYNC_INTERVAL_MS)) {
       // Don't await - let it run in background
       backgroundSync();
     }
 
     // Return data immediately from database (fast)
     let sessions = query.trim()
-      ? getAggregatedSessions()
+      ? getWebSessions()
       : fields === 'basic'
-      ? getAggregatedSessionsBasic()
-      : getAggregatedSessions();
+      ? getWebSessionsBasic()
+      : getWebSessions();
     if (projectRoot || projectId) {
       sessions = sessions.filter(s => matchesProjectFilter(s, { projectRoot, projectId }));
     }
@@ -555,6 +557,12 @@ app.get('/:id/full', async (c) => {
 // POST /api/sync - Manual session sync
 app.post('/sync', async (c) => {
   try {
+    if (getWebSessionSource() === 'service') {
+      return c.json({
+        success: false,
+        error: 'Session refresh is managed by Keepline Service Mode.',
+      }, 409);
+    }
     // Parse request body for sync options
     let body: { fullSync?: boolean } = {};
     try {

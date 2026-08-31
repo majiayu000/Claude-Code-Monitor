@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  hasCurrentLifecycleHook,
   installKeeplineHookConfig,
   isKeeplineHook,
   uninstallKeeplineHookConfig,
@@ -163,5 +164,19 @@ describe('hook installer ownership detection', () => {
     expect(command).not.toContain('$CLAUDE_EVENT_TYPE');
     expect(command).not.toContain('$CLAUDE_SESSION_ID');
     expect(command).not.toContain('$CLAUDE_TOOL_INPUT');
+  });
+
+  test('lifecycle readiness requires a command Stop hook targeting the current receiver', () => {
+    const current: ClaudeSettings = {};
+    installKeeplineHookConfig(current, markedCommand);
+    expect(hasCurrentLifecycleHook(current, markedCommand)).toBe(true);
+
+    const stale: ClaudeSettings = {};
+    installKeeplineHookConfig(stale, markedCommand.replace(':7890/', ':7891/'));
+    expect(hasCurrentLifecycleHook(stale, markedCommand)).toBe(false);
+    expect(hasCurrentLifecycleHook({}, markedCommand)).toBe(false);
+    expect(hasCurrentLifecycleHook({
+      hooks: { Stop: [{ hooks: [{ type: 'prompt', command: markedCommand }] }] },
+    }, markedCommand)).toBe(false);
   });
 });

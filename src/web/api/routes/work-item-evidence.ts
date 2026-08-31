@@ -1,9 +1,8 @@
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import {
-  workItemEvidenceRepository,
-  workItemRepository,
-} from '../../../infrastructure/database/index.js';
+import { sessionRepository } from '../../../infrastructure/database/repositories/session.repository.js';
+import { workItemEvidenceRepository } from '../../../infrastructure/database/repositories/work-item-evidence.repository.js';
+import { workItemRepository } from '../../../infrastructure/database/repositories/work-item.repository.js';
 import {
   isProgressEvidenceConfidence,
   isProgressEvidenceKind,
@@ -17,8 +16,9 @@ import type { SessionStatus } from '../../../domain/session/index.js';
 import type { RuntimeId } from '../../../domain/runtime/index.js';
 import { isValidSessionId } from '../../../lib/session-id.js';
 import { logger } from '../../../lib/logger.js';
+import { runtimeIdForClient } from '../../../services/runtime-status.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { readJsonObject } from './work-items.js';
+import { readJsonObject } from '../../../local-api/http.js';
 
 const app = new Hono();
 app.use('*', authMiddleware);
@@ -169,13 +169,36 @@ app.post('/:id/session-links', async (c) => {
   const parsedBody = await readJsonObject(c);
   if (parsedBody.response) return parsedBody.response;
   const data = parsedBody.data!;
-  const agentSessionId = readRequiredString(c, data, 'agentSessionId', 64);
-  if (agentSessionId.response) return agentSessionId.response;
-  if (!isValidSessionId(agentSessionId.value!)) {
-    return c.json({ success: false, error: 'Invalid agentSessionId format' }, 400);
-  }
-  if (!workItemEvidenceRepository.findAgentSessionById(agentSessionId.value!)) {
-    return c.json({ success: false, error: 'Agent session not found' }, 404);
+  let agentSessionId: string | undefined;
+  if (typeof data.sessionId === 'string' && data.sessionId.trim()) {
+    const sessionId = data.sessionId.trim();
+    if (!isValidSessionId(sessionId)) {
+      return c.json({ success: false, error: 'Invalid sessionId format' }, 400);
+    }
+    const runtimeSession = sessionRepository.findBySessionId(sessionId);
+    if (!runtimeSession) {
+      return c.json({ success: false, error: 'Session not found' }, 404);
+    }
+    const saved = workItemEvidenceRepository.upsertAgentSession({
+      runtimeId: runtimeIdForClient(runtimeSession.client),
+      runtimeSessionId: runtimeSession.sessionId,
+      cwd: runtimeSession.directory,
+      status: runtimeSession.status,
+      title: runtimeSession.title,
+      lastActiveAt: runtimeSession.lastActiveAt,
+      evidenceSummary: runtimeSession.lastMessage,
+    });
+    agentSessionId = saved.id;
+  } else {
+    const parsedAgentSessionId = readRequiredString(c, data, 'agentSessionId', 64);
+    if (parsedAgentSessionId.response) return parsedAgentSessionId.response;
+    if (!isValidSessionId(parsedAgentSessionId.value!)) {
+      return c.json({ success: false, error: 'Invalid agentSessionId format' }, 400);
+    }
+    if (!workItemEvidenceRepository.findAgentSessionById(parsedAgentSessionId.value!)) {
+      return c.json({ success: false, error: 'Agent session not found' }, 404);
+    }
+    agentSessionId = parsedAgentSessionId.value!;
   }
 
   const rawLinkSource = data.linkSource ?? 'user';
@@ -192,7 +215,7 @@ app.post('/:id/session-links', async (c) => {
   try {
     const link = workItemEvidenceRepository.createSessionLink({
       workItemId,
-      agentSessionId: agentSessionId.value!,
+      agentSessionId,
       linkSource: rawLinkSource,
     } satisfies WorkItemSessionLinkCreateInput);
 
@@ -205,6 +228,14 @@ app.post('/:id/session-links', async (c) => {
 
 app.post('/session-links/:id/accept', (c) => {
   const link = workItemEvidenceRepository.acceptSessionLink(c.req.param('id'));
+  if (!link) {
+    return c.json({ success: false, error: 'Work item session link not found' }, 404);
+  }
+  return c.json({ success: true, data: { link: serializeLink(link) } });
+});
+
+app.post('/session-links/:id/reject', (c) => {
+  const link = workItemEvidenceRepository.rejectSessionLink(c.req.param('id'));
   if (!link) {
     return c.json({ success: false, error: 'Work item session link not found' }, 404);
   }

@@ -43,6 +43,8 @@ export interface UseWorkItemsReturn {
   createItem: (input: WorkItemCreateInput) => Promise<WorkItem | null>
   updateItem: (id: string, input: WorkItemUpdateInput) => Promise<WorkItem | null>
   deleteItem: (id: string) => Promise<boolean>
+  reviewCompletion: (id: string, evidenceId: string, decision: 'accepted' | 'rejected') => Promise<boolean>
+  reviewSessionLink: (linkId: string, decision: 'accept' | 'reject') => Promise<boolean>
 }
 
 export function useWorkItems(_token: string): UseWorkItemsReturn {
@@ -107,6 +109,37 @@ export function useWorkItems(_token: string): UseWorkItemsReturn {
     return false
   }, [refresh])
 
+  const reviewCompletion = useCallback(async (
+    id: string,
+    evidenceId: string,
+    decision: 'accepted' | 'rejected'
+  ): Promise<boolean> => {
+    setSaving(true)
+    const response = await api.reviewWorkItemCompletion(id, evidenceId, decision)
+    setSaving(false)
+    if (response.success) {
+      await refresh()
+      return true
+    }
+    setError(response.error || 'Failed to review completion')
+    return false
+  }, [refresh])
+
+  const reviewSessionLink = useCallback(async (
+    linkId: string,
+    decision: 'accept' | 'reject'
+  ): Promise<boolean> => {
+    setSaving(true)
+    const response = await api.reviewWorkItemSessionLink(linkId, decision)
+    setSaving(false)
+    if (response.success) {
+      await refresh()
+      return true
+    }
+    setError(response.error || 'Failed to review session link')
+    return false
+  }, [refresh])
+
   useEffect(() => {
     mountedRef.current = true
     refresh()
@@ -126,5 +159,7 @@ export function useWorkItems(_token: string): UseWorkItemsReturn {
     createItem,
     updateItem,
     deleteItem,
+    reviewCompletion,
+    reviewSessionLink,
   }
 }

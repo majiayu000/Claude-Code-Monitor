@@ -6,7 +6,7 @@ import { execSync, spawn } from 'child_process';
 import path from 'path';
 import { existsSync } from 'fs';
 import { logger } from '../lib/logger.js';
-import { shellQuote } from '../lib/shell-quote.js';
+import { renderShellCommand, shellQuote } from '../lib/shell-quote.js';
 import type { TerminalApp } from './recovery.types.js';
 
 // Allowed commands whitelist for recovery
@@ -91,6 +91,19 @@ export function openTerminalWithCommand(
   } else {
     openTerminalApp(command, directory);
   }
+}
+
+/** Open a validated argv command at the terminal automation boundary. */
+export function openTerminalWithArgv(
+  executable: string,
+  args: string[],
+  directory: string,
+  terminalApp: TerminalApp = 'auto'
+): void {
+  if (!ALLOWED_COMMANDS.includes(executable)) {
+    throw new Error('Command not allowed');
+  }
+  openTerminalWithCommand(renderShellCommand([executable, ...args]), directory, terminalApp);
 }
 
 /** Open Terminal.app with command */
