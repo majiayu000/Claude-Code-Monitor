@@ -124,6 +124,15 @@ export class TaskDispatchRepository {
     return row ? rowToDispatch(row) : null;
   }
 
+  findByWorkItemId(workItemId: string): TaskDispatch[] {
+    const rows = getDatabase().prepare(`
+      SELECT * FROM task_dispatches
+      WHERE work_item_id = ?
+      ORDER BY created_at ASC
+    `).all(workItemId) as DispatchRow[];
+    return rows.map(rowToDispatch);
+  }
+
   findPending(): TaskDispatch[] {
     const rows = getDatabase().prepare(`
       SELECT * FROM task_dispatches

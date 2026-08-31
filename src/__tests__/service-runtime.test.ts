@@ -5,6 +5,12 @@ import { join, resolve } from 'path';
 import { emit } from '../lib/events.js';
 import { serviceMigrationVersions } from '../local-api/migrations.js';
 import { startKeeplineService, type KeeplineService } from '../services/service-runtime.js';
+import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
+import { workItemEvidenceRepository } from '../infrastructure/database/repositories/work-item-evidence.repository.js';
+import { workItemRepository } from '../infrastructure/database/repositories/work-item.repository.js';
+import { getDatabase } from '../infrastructure/database/sqlite.js';
+import { taskDispatchRepository } from '../infrastructure/database/repositories/task-dispatch.repository.js';
+import { reconcileLinkedAgentSessions } from '../services/work-item-session-reconciler.js';
 
 const SCAN_RESULT_PREFIX = '__KEEPLINE_SERVICE_SCAN__';
 let liveService: KeeplineService | undefined;
@@ -33,6 +39,214 @@ function successfulScanCommand(): string[] {
 }
 
 describe('service runtime isolation', () => {
+  test('treats Claude Stop as a turn boundary, never task completion', async () => {
+    liveService = await startKeeplineService({
+      port: 0,
+      hookPort: 0,
+      scanIntervalMs: 0,
+      scanCommand: successfulScanCommand(),
+    });
+    const metadataResponse = await fetch(
+      `http://127.0.0.1:${liveService.server.port}/api/v1/meta`
+    );
+    const metadata = await metadataResponse.json() as {
+      data: { runtimes: Array<{ id: string; capabilities: string[] }> };
+    };
+    const claudeCapabilities = metadata.data.runtimes.find(
+      (runtime) => runtime.id === 'claude-code'
+    )?.capabilities;
+    expect(claudeCapabilities).toContain('session-lifecycle-hook-unconfigured');
+    expect(claudeCapabilities).toContain('agent-completion-claim-hook-unconfigured');
+    expect(claudeCapabilities).not.toContain('explicit-completion-hook');
+    expect(claudeCapabilities).toContain('explicit-completion-manual-only');
+
+    const sessionId = 'service-stop-session';
+    sessionRepository.upsert({
+      sessionId,
+      client: 'claude',
+      directory: '/tmp/service-stop',
+      title: 'Exercise embedded completion',
+      initialPrompt: 'Exercise embedded completion',
+      status: 'running',
+      startedAt: new Date('2026-08-30T10:00:00.000Z'),
+      lastActiveAt: new Date('2026-08-30T10:00:00.000Z'),
+      toolCount: 0,
+      messageCount: 1,
+    });
+
+    const postStop = (body: Record<string, unknown>) => fetch(
+      `http://127.0.0.1:${liveService!.hookPort}/hook`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          hook_event_name: 'Stop',
+          session_id: sessionId,
+          cwd: '/tmp/service-stop',
+          timestamp: '2026-08-30T10:05:00.000Z',
+          ...body,
+        }),
+      }
+    );
+
+    expect((await postStop({ session_id: 'unknown-stop-session' })).status).toBe(404);
+    expect((await postStop({ cwd: '/tmp/wrong-project' })).status).toBe(409);
+    sessionRepository.upsert({
+      sessionId: 'codex-stop-session',
+      client: 'codex',
+      directory: '/tmp/codex-stop',
+      status: 'running',
+    });
+    expect((await postStop({
+      session_id: 'codex-stop-session',
+      cwd: '/tmp/codex-stop',
+    })).status).toBe(409);
+
+    const response = await postStop({ stop_reason: 'completed' });
+
+    expect(response.status).toBe(200);
+    expect(sessionRepository.findBySessionId(sessionId)).toMatchObject({
+      status: 'running',
+    });
+    expect(sessionRepository.findBySessionId(sessionId)?.completedAt).toBeUndefined();
+    expect((await postStop({ timestamp: '2026-08-30T10:06:00.000Z' })).status).toBe(200);
+    expect(sessionRepository.findBySessionId(sessionId)?.completedAt).toBeUndefined();
+
+    const workItem = workItemRepository.create({ title: 'Claimed work' });
+    const agentSession = workItemEvidenceRepository.upsertAgentSession({
+      runtimeId: 'claude-code',
+      runtimeSessionId: sessionId,
+      cwd: '/tmp/service-stop',
+      status: 'running',
+      title: 'Exercise embedded completion',
+    });
+    workItemEvidenceRepository.createSessionLink({
+      workItemId: workItem.id,
+      agentSessionId: agentSession.id,
+      linkSource: 'user',
+    });
+    expect((await postStop({
+      last_assistant_message: 'Done\nKEEPLINE_COMPLETE_WORK_ITEM:wrong-work-item',
+    })).status).toBe(200);
+    expect(
+      workItemEvidenceRepository.findLatestExplicitCompletionForAgentSession(agentSession.id)
+    ).toBeNull();
+
+    const claimTimestamp = '2026-08-30T10:07:00.000Z';
+    const claim = `Done and verified\nKEEPLINE_COMPLETE_WORK_ITEM:${workItem.id}`;
+    expect((await postStop({
+      timestamp: claimTimestamp,
+      last_assistant_message: claim,
+    })).status).toBe(200);
+    const evidence = workItemEvidenceRepository
+      .findLatestExplicitCompletionForAgentSession(agentSession.id);
+    expect(evidence).toMatchObject({
+      workItemId: workItem.id,
+      outcome: 'completed',
+      confidence: 'explicit',
+      metadata: {
+        source: 'agent_completion_claim',
+        claimAt: claimTimestamp,
+      },
+    });
+    expect(sessionRepository.findBySessionId(sessionId)?.completedAt).toBeUndefined();
+    expect((await postStop({
+      timestamp: claimTimestamp,
+      last_assistant_message: claim,
+    })).status).toBe(200);
+    const claimCount = getDatabase().prepare(`
+      SELECT COUNT(*) AS count FROM progress_evidence
+      WHERE agent_session_id = ? AND json_extract(metadata, '$.source') = 'agent_completion_claim'
+    `).get(agentSession.id) as { count: number };
+    expect(claimCount.count).toBe(1);
+
+    const pendingWorkItem = workItemRepository.create({ title: 'Fast completion claim' });
+    const pendingSessionId = 'pending-stop-session';
+    const pendingDispatch = taskDispatchRepository.create({
+      workItemId: pendingWorkItem.id,
+      runtimeId: 'claude-code',
+      cwd: '/tmp/service-stop',
+      prompt: 'Finish quickly',
+      terminalApp: 'auto',
+      idempotencyKey: 'pending-claim-dispatch',
+      preLaunchSessionIds: [],
+      correlationDeadlineAt: new Date('2026-08-30T10:20:00.000Z'),
+    });
+    taskDispatchRepository.updateState(pendingDispatch.id, 'awaiting_session', {
+      launchedAt: new Date('2026-08-30T10:00:00.000Z'),
+    });
+    const pendingTimestamp = '2026-08-30T10:08:00.000Z';
+    expect((await postStop({
+      session_id: pendingSessionId,
+      timestamp: pendingTimestamp,
+      last_assistant_message:
+        `Verified\nKEEPLINE_COMPLETE_WORK_ITEM:${pendingWorkItem.id}`,
+    })).status).toBe(202);
+    const pendingCount = getDatabase().prepare(`
+      SELECT COUNT(*) AS count FROM progress_evidence
+      WHERE work_item_id = ? AND json_extract(metadata, '$.source') = 'pending_agent_completion_claim'
+    `).get(pendingWorkItem.id) as { count: number };
+    expect(pendingCount.count).toBe(1);
+
+    sessionRepository.upsert({
+      sessionId: pendingSessionId,
+      client: 'claude',
+      directory: '/tmp/service-stop',
+      title: 'Fast completion claim',
+      status: 'running',
+      lastActiveAt: new Date(pendingTimestamp),
+    });
+    const pendingAgentSession = workItemEvidenceRepository.upsertAgentSession({
+      runtimeId: 'claude-code',
+      runtimeSessionId: pendingSessionId,
+      cwd: '/tmp/service-stop',
+      status: 'running',
+      title: 'Fast completion claim',
+      lastActiveAt: new Date(pendingTimestamp),
+    });
+    workItemEvidenceRepository.createSessionLink({
+      workItemId: pendingWorkItem.id,
+      agentSessionId: pendingAgentSession.id,
+      linkSource: 'user',
+    });
+    reconcileLinkedAgentSessions();
+    expect(
+      workItemEvidenceRepository.findLatestExplicitCompletionForAgentSession(
+        pendingAgentSession.id
+      )
+    ).toMatchObject({
+      workItemId: pendingWorkItem.id,
+      metadata: { source: 'agent_completion_claim', claimAt: pendingTimestamp },
+    });
+
+    const oversizedBody = JSON.stringify({
+      hook_event_name: 'Notification',
+      session_id: sessionId,
+      cwd: '/tmp/service-stop',
+      message: 'x'.repeat(70 * 1024),
+    });
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(oversizedBody));
+        controller.close();
+      },
+    });
+    const oversizedResponse = await fetch(
+      `http://127.0.0.1:${liveService.hookPort}/hook`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: stream,
+      }
+    );
+    expect(oversizedResponse.status).toBe(413);
+
+    const hookPort = liveService.hookPort;
+    await liveService.stop();
+    liveService = undefined;
+    await expect(fetch(`http://127.0.0.1:${hookPort}/health`)).rejects.toThrow();
+  });
+
   test('keeps the static service graph free of heavy app-only modules', async () => {
     const outputDirectory = mkdtempSync(join(tmpdir(), 'keepline-service-graph-'));
     const buildWithMetafile = Bun.build as unknown as (
@@ -69,7 +283,7 @@ describe('service runtime isolation', () => {
       /(?:memory|pricing|recovery\.service|services\/terminal\.ts|pty\.manager|web\/api\/routes\/(?:sessions|recovery|auth|work-items))/.test(path)
     );
     expect(forbidden).toEqual([]);
-    expect(serviceMigrationVersions).toEqual([1, 4, 5, 6, 7, 8, 10, 11, 12]);
+    expect(serviceMigrationVersions).toEqual([1, 4, 5, 6, 7, 8, 10, 11, 12, 13]);
   });
 
   test('uses watchdog TERM then KILL and bounds captured child output', async () => {
@@ -80,6 +294,7 @@ describe('service runtime isolation', () => {
     `;
     liveService = await startKeeplineService({
       port: 0,
+      hookPort: 0,
       scanIntervalMs: 0,
       scanTimeoutMs: 60,
       scanKillGraceMs: 30,
@@ -109,6 +324,7 @@ describe('service runtime isolation', () => {
     `;
     liveService = await startKeeplineService({
       port: 0,
+      hookPort: 0,
       scanIntervalMs: 0,
       scanTimeoutMs: 10_000,
       scanKillGraceMs: 30,
@@ -127,7 +343,7 @@ describe('service runtime isolation', () => {
     expect(performance.now() - started).toBeLessThan(500);
   });
 
-  test('does not lose a dispatch wake-up during a scan when interval is zero', async () => {
+  test('rescans promptly for dispatch, turn-boundary, and completion events', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'keepline-rescan-'));
     const counterPath = join(directory, 'count');
     writeFileSync(counterPath, '0');
@@ -141,6 +357,7 @@ describe('service runtime isolation', () => {
     `;
     liveService = await startKeeplineService({
       port: 0,
+      hookPort: 0,
       scanIntervalMs: 0,
       scanTimeoutMs: 2_000,
       scanCommand: [process.execPath, '-e', script],
@@ -148,7 +365,19 @@ describe('service runtime isolation', () => {
     await waitUntil(() => Number(readFileSync(counterPath, 'utf8')) === 1);
     emit('dispatch:created', { dispatchId: 'rescan-test' });
     await waitUntil(() => Number(readFileSync(counterPath, 'utf8')) >= 2);
-    expect(Number(readFileSync(counterPath, 'utf8'))).toBe(2);
+    emit('session:turn-ended', {
+      sessionId: 'rescan-session',
+      timestamp: new Date('2026-08-30T10:00:00.000Z'),
+    });
+    await waitUntil(() => Number(readFileSync(counterPath, 'utf8')) >= 3);
+    const completedSession = sessionRepository.upsert({
+      sessionId: 'rescan-session',
+      status: 'completed',
+      completedAt: new Date('2026-08-30T10:00:00.000Z'),
+    });
+    emit('session:completed', { session: completedSession });
+    await waitUntil(() => Number(readFileSync(counterPath, 'utf8')) >= 4);
+    expect(Number(readFileSync(counterPath, 'utf8'))).toBe(4);
   });
 
   test('allows local auth in actual loopback service mode despite a wildcard web host env', async () => {
@@ -157,6 +386,7 @@ describe('service runtime isolation', () => {
     try {
       liveService = await startKeeplineService({
         port: 0,
+        hookPort: 0,
         scanIntervalMs: 0,
         scanCommand: successfulScanCommand(),
       });

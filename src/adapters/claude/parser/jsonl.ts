@@ -5,6 +5,7 @@
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
 import { ParseError } from '../../../lib/errors.js';
+import { extractTaskPrompt } from '../../../domain/session/index.js';
 import type {
   ClaudeEntry,
   ClaudeUserEntry,
@@ -90,7 +91,7 @@ function extractSystemCommand(content: string): string | undefined {
 function extractUserPrompt(entry: ClaudeUserEntry): string | undefined {
   const content = entry.message.content;
   if (typeof content === 'string') {
-    return content;
+    return extractTaskPrompt(content);
   }
   return undefined;
 }
@@ -331,9 +332,8 @@ function accumulateSessionEntry(
 
   if (entry.type === 'user' && entry.userType === 'external') {
     accumulator.messageCount++;
-    if (!accumulator.firstMessage) {
-      accumulator.firstMessage = extractUserPrompt(entry as ClaudeUserEntry);
-    }
+    const taskPrompt = extractUserPrompt(entry as ClaudeUserEntry);
+    if (taskPrompt) accumulator.firstMessage = taskPrompt;
   }
 
   if ((entry as { type?: string }).type === 'system' && !accumulator.firstSystemCommand) {

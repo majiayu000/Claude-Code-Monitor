@@ -132,7 +132,17 @@ export interface IWorkItemEvidenceRepository {
   findEvidenceById(id: string): ProgressEvidence | null;
   findLatestExplicitCompletionForAgentSession(agentSessionId: string): ProgressEvidence | null;
   findAcceptedLinkedAgentSessions(): AgentSession[];
+  findAcceptedSessionLinks(agentSessionId: string): WorkItemSessionLink[];
   findCanonicalCompletionEvidence(agentSessionId: string, completedAt: Date): ProgressEvidence | null;
+  findAgentCompletionClaimEvidence(
+    agentSessionId: string,
+    workItemId: string,
+    claimAt: Date
+  ): ProgressEvidence | null;
+  findPendingAgentCompletionClaims(
+    workItemId: string,
+    runtimeSessionId: string
+  ): ProgressEvidence[];
   findProjectionDataForWorkItems(workItemIds: string[]): WorkItemEvidenceProjectionData;
 }
 
@@ -338,6 +348,15 @@ class WorkItemEvidenceRepository implements IWorkItemEvidenceRepository {
     return rows.map(rowToAgentSession);
   }
 
+  findAcceptedSessionLinks(agentSessionId: string): WorkItemSessionLink[] {
+    const rows = getDatabase().prepare(`
+      SELECT * FROM work_item_session_links
+      WHERE agent_session_id = ? AND acceptance_status = 'accepted'
+      ORDER BY accepted_at ASC, created_at ASC
+    `).all(agentSessionId) as WorkItemSessionLinkRow[];
+    return rows.map(rowToWorkItemSessionLink);
+  }
+
   findCanonicalCompletionEvidence(
     agentSessionId: string,
     completedAt: Date
@@ -358,6 +377,48 @@ class WorkItemEvidenceRepository implements IWorkItemEvidenceRepository {
       }
     }
     return null;
+  }
+
+  findAgentCompletionClaimEvidence(
+    agentSessionId: string,
+    workItemId: string,
+    claimAt: Date
+  ): ProgressEvidence | null {
+    const rows = getDatabase().prepare(`
+      SELECT * FROM progress_evidence
+      WHERE agent_session_id = ?
+        AND work_item_id = ?
+        AND outcome = 'completed'
+        AND confidence = 'explicit'
+      ORDER BY occurred_at DESC, created_at DESC
+    `).all(agentSessionId, workItemId) as ProgressEvidenceRow[];
+    const claimAtIso = claimAt.toISOString();
+    for (const row of rows) {
+      const evidence = rowToProgressEvidence(row);
+      if (evidence.metadata?.source === 'agent_completion_claim' &&
+          evidence.metadata.claimAt === claimAtIso) {
+        return evidence;
+      }
+    }
+    return null;
+  }
+
+  findPendingAgentCompletionClaims(
+    workItemId: string,
+    runtimeSessionId: string
+  ): ProgressEvidence[] {
+    const rows = getDatabase().prepare(`
+      SELECT * FROM progress_evidence
+      WHERE work_item_id = ?
+        AND agent_session_id IS NULL
+        AND outcome = 'progress'
+        AND confidence = 'inferred'
+      ORDER BY occurred_at ASC, created_at ASC
+    `).all(workItemId) as ProgressEvidenceRow[];
+    return rows.map(rowToProgressEvidence).filter((evidence) =>
+      evidence.metadata?.source === 'pending_agent_completion_claim' &&
+      evidence.metadata.runtimeSessionId === runtimeSessionId
+    );
   }
 
   findProjectionDataForWorkItems(workItemIds: string[]): WorkItemEvidenceProjectionData {

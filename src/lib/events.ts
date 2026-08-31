@@ -36,6 +36,7 @@ export type KeeplineEvents = {
   'session:recovered': SessionEventPayload;
   'session:completed': SessionEventPayload;
   'session:end': SessionEndEventPayload;
+  'session:turn-ended': SessionEndEventPayload;
 
   // Tool events (from hooks)
   'tool:pre': ToolEventPayload;

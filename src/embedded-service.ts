@@ -19,8 +19,16 @@ function commandArguments(): string[] {
   return args;
 }
 
-function parseServiceOptions(args: string[]): { port?: string; scanInterval?: string } {
-  const options: { port?: string; scanInterval?: string } = {};
+function parseServiceOptions(args: string[]): {
+  port?: string;
+  scanInterval?: string;
+  exitOnStdinClose?: boolean;
+} {
+  const options: {
+    port?: string;
+    scanInterval?: string;
+    exitOnStdinClose?: boolean;
+  } = {};
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === 'service') continue;
@@ -32,6 +40,10 @@ function parseServiceOptions(args: string[]): { port?: string; scanInterval?: st
     if (argument === '--scan-interval') {
       options.scanInterval = args[++index];
       if (!options.scanInterval) throw new Error(`${argument} requires a value`);
+      continue;
+    }
+    if (argument === '--exit-on-stdin-close') {
+      options.exitOnStdinClose = true;
       continue;
     }
     throw new Error(`Unknown embedded service argument: ${argument}`);

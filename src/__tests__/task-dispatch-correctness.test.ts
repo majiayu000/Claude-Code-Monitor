@@ -18,6 +18,31 @@ import {
 describe('task dispatch correctness', () => {
   beforeEach(() => resetDatabase());
 
+  test('gives Claude an exact completion-claim contract without changing stored prompts', async () => {
+    const launches: Array<{ executable: string; args: string[] }> = [];
+    const service = new TaskDispatchService({
+      launch: (executable, args) => { launches.push({ executable, args }); },
+    });
+    const claudeItem = workItemRepository.create({ title: 'Claude claim' });
+    const codexItem = workItemRepository.create({ title: 'Codex manual completion' });
+
+    const claudeDispatch = await service.dispatch(claudeItem.id, {
+      runtimeId: 'claude-code', cwd: '/tmp', prompt: 'Run the checks', idempotencyKey: 'claim-contract',
+    });
+    await service.dispatch(codexItem.id, {
+      runtimeId: 'codex', cwd: '/tmp', prompt: 'Run Codex checks', idempotencyKey: 'codex-contract',
+    });
+
+    expect(claudeDispatch.prompt).toBe('Run the checks');
+    expect(launches[0]).toEqual({
+      executable: 'claude',
+      args: [
+        `Run the checks\n\nOnly after the task is fully complete and verified, end your final response with this exact line:\nKEEPLINE_COMPLETE_WORK_ITEM:${claudeItem.id}\nDo not output that line when blocked, waiting for input, or incomplete.`,
+      ],
+    });
+    expect(launches[1]).toEqual({ executable: 'codex', args: ['Run Codex checks'] });
+  });
+
   test('makes every dispatch ambiguous when multiple tasks match the same new session', async () => {
     const now = new Date('2026-08-30T00:00:00.000Z');
     const service = new TaskDispatchService({ now: () => now, launch: () => {} });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { generateTitle } from '../domain/session/entity.js';
+import { extractTaskPrompt, generateTitle } from '../domain/session/entity.js';
 import { serializeBasicSession } from '../web/api/session-response.js';
 
 describe('Session Response Serialization', () => {
@@ -98,5 +98,19 @@ cwd metadata
 Fix active issue queue`);
 
     expect(title).toBe('Fix active issue queue');
+  });
+
+  test('extractTaskPrompt unwraps consecutive context blocks and ignores continuation', () => {
+    const task = extractTaskPrompt(`<recommended_plugins>catalog</recommended_plugins>
+# AGENTS.md instructions for /tmp/project
+<INSTRUCTIONS>rules</INSTRUCTIONS>
+<environment_context>cwd metadata</environment_context>
+Repair the active queue`);
+
+    expect(task).toBe('Repair the active queue');
+    expect(extractTaskPrompt('继续。')).toBeUndefined();
+    expect(extractTaskPrompt('Explain AGENTS.md instructions parsing')).toBe(
+      'Explain AGENTS.md instructions parsing'
+    );
   });
 });

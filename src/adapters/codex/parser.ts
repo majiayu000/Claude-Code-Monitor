@@ -5,7 +5,7 @@
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
 import { ParseError } from '../../lib/errors.js';
-import type { ToolCallInfo } from '../../domain/session/index.js';
+import { extractTaskPrompt, type ToolCallInfo } from '../../domain/session/index.js';
 import type { CodexJsonlEntry, CodexParsedSessionData } from './types.js';
 import {
   addUsageToAccumulator,
@@ -159,8 +159,9 @@ function accumulateResponseItem(accumulator: CodexAccumulator, entry: CodexJsonl
     accumulator.messageCount++;
     const text = firstTextContent(payload.content);
 
-    if (payload.role === 'user' && !accumulator.firstMessage && text) {
-      accumulator.firstMessage = text;
+    if (payload.role === 'user' && text) {
+      const taskPrompt = extractTaskPrompt(text);
+      if (taskPrompt) accumulator.firstMessage = taskPrompt;
     }
     if (payload.role === 'assistant' && text) {
       accumulator.lastMessage = text;

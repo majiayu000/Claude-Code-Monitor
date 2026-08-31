@@ -15,7 +15,8 @@ import { emit } from '../lib/events.js';
 const SUPPORTED_RUNTIMES = new Set<RuntimeId>(['codex', 'claude-code']);
 export const DEFAULT_DISPATCH_CORRELATION_TIMEOUT_MS = 2 * 60_000;
 export const DISPATCH_CORRELATION_TIMEOUT_ERROR =
-  'No unique Agent session appeared before the correlation deadline.';
+  'No unique Agent session appeared before the correlation deadline. ' +
+  'Check the opened terminal for project trust or login prompts, then retry.';
 
 export class DispatchIdempotencyConflictError extends Error {
   constructor() {
@@ -62,9 +63,19 @@ function matchesRuntime(session: Session, runtimeId: RuntimeId): boolean {
   return runtimeIdForClient(session.client) === runtimeId;
 }
 
-function buildLaunch(runtimeId: RuntimeId, prompt: string): { executable: string; args: string[] } {
+function buildLaunch(
+  runtimeId: RuntimeId,
+  prompt: string,
+  workItemId: string
+): { executable: string; args: string[] } {
   if (runtimeId === 'codex') return { executable: 'codex', args: [prompt] };
-  if (runtimeId === 'claude-code') return { executable: 'claude', args: [prompt] };
+  if (runtimeId === 'claude-code') {
+    const completionContract =
+      'Only after the task is fully complete and verified, end your final response with this exact line:\n' +
+      `KEEPLINE_COMPLETE_WORK_ITEM:${workItemId}\n` +
+      'Do not output that line when blocked, waiting for input, or incomplete.';
+    return { executable: 'claude', args: [`${prompt}\n\n${completionContract}`] };
+  }
   throw new Error(`Unsupported runtime: ${runtimeId}`);
 }
 
@@ -136,7 +147,7 @@ export class TaskDispatchService {
       correlationDeadlineAt: new Date(this.now().getTime() + this.correlationTimeoutMs),
     });
     dispatch = taskDispatchRepository.updateState(dispatch.id, 'launching')!;
-    const command = buildLaunch(input.runtimeId, prompt);
+    const command = buildLaunch(input.runtimeId, prompt, workItemId);
     try {
       if (this.launch) {
         await this.launch(command.executable, command.args, cwd, dispatch.terminalApp);

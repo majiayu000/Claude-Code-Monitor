@@ -3,6 +3,7 @@ import { startKeeplineService } from '../services/service-runtime.js';
 interface ServiceOptions {
   port?: string;
   scanInterval?: string;
+  exitOnStdinClose?: boolean;
 }
 
 interface ServiceRuntimeOptions {
@@ -37,5 +38,14 @@ export async function serviceCommand(
   };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
+  if (options.exitOnStdinClose) {
+    const shutdownWhenParentPipeCloses = () => {
+      void shutdown();
+    };
+    process.stdin.once('end', shutdownWhenParentPipeCloses);
+    process.stdin.once('close', shutdownWhenParentPipeCloses);
+    process.stdin.once('error', shutdownWhenParentPipeCloses);
+    process.stdin.resume();
+  }
   await new Promise<void>(() => {});
 }

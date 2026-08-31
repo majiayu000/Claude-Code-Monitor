@@ -174,6 +174,29 @@ export function generateTitle(prompt: string): string {
   return summarizePrompt(prompt);
 }
 
+/** Extract a user-authored task from Codex/Claude context wrapper messages. */
+export function extractTaskPrompt(prompt: string): string | undefined {
+  const trimmed = prompt.trim();
+  if (!trimmed) return undefined;
+
+  if (/^<recommended_plugins(?:\s|>)/i.test(trimmed)) {
+    const remainder = textAfterClosingTag(trimmed, '</recommended_plugins>');
+    return remainder ? extractTaskPrompt(remainder) : undefined;
+  }
+  if (/^#\s*AGENTS\.md instructions(?:\s|$)/i.test(trimmed)) {
+    const remainder = extractPromptAfterAgentInstructions(trimmed);
+    return remainder ? extractTaskPrompt(remainder) : undefined;
+  }
+  if (/^<environment_context(?:\s|>)/i.test(trimmed)) {
+    const remainder = textAfterClosingTag(trimmed, '</environment_context>');
+    return remainder ? extractTaskPrompt(remainder) : undefined;
+  }
+
+  if (/^继续[。.!！]?$/.test(trimmed)) return undefined;
+
+  return trimmed;
+}
+
 function summarizePrompt(prompt: string): string {
   if (prompt.length <= 80) return prompt;
 
@@ -199,4 +222,11 @@ function extractPromptAfterAgentInstructions(prompt: string): string | null {
   }
 
   return null;
+}
+
+function textAfterClosingTag(prompt: string, closingTag: string): string | undefined {
+  const close = prompt.lastIndexOf(closingTag);
+  if (close === -1) return undefined;
+  const rest = prompt.slice(close + closingTag.length).trim();
+  return rest || undefined;
 }

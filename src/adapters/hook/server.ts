@@ -259,17 +259,12 @@ async function handleHookEvent(event: HookEvent): Promise<void> {
       break;
 
     case 'Stop':
-      // Session stopped
+      // Claude finished one response turn. This is not evidence that the task completed.
       updateSession(event.session_id, {
-        status: 'completed',
-        completedAt: new Date(event.timestamp),
+        lastActiveAt: new Date(event.timestamp),
       });
-
-      // Clean up session tracking
       sessionFirstPrompts.delete(event.session_id);
-
-      // Emit session:end event
-      emit('session:end', {
+      emit('session:turn-ended', {
         sessionId: event.session_id,
         timestamp: new Date(event.timestamp),
         reason: (event as { reason?: string }).reason,

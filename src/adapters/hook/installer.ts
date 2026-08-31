@@ -58,8 +58,7 @@ function saveClaudeSettings(settings: ClaudeSettings): void {
  * is a harmless env assignment used only to identify Keepline-owned hooks in
  * the settings file.
  */
-function getHookCommand(): string {
-  const port = config.get().hookPort;
+function getHookCommand(port: number = config.get().hookPort): string {
   return `${KEEPLINE_HOOK_MARKER} curl -fsS -X POST http://127.0.0.1:${port}/hook -H "Content-Type: application/json" --data-binary @- > /dev/null 2>&1 || true`;
 }
 
@@ -213,6 +212,25 @@ export function uninstallKeeplineHookConfig(settings: ClaudeSettings): number {
 
 function hasKeeplineHook(settings: ClaudeSettings): boolean {
   return HOOK_TYPES.every((hookType) => settings.hooks?.[hookType]?.some(isKeeplineHook));
+}
+
+export function hasCurrentLifecycleHook(
+  settings: ClaudeSettings,
+  hookCommand: string = getHookCommand()
+): boolean {
+  return settings.hooks?.Stop?.some((hook) => {
+    if (isHookCommandHandler(hook)) {
+      return hook.type === 'command' && hook.command === hookCommand;
+    }
+    return isHookMatcherGroup(hook) && hook.hooks.some(
+      (handler) => handler.type === 'command' && handler.command === hookCommand
+    );
+  }) ?? false;
+}
+
+/** Check whether Claude Stop events target the running lifecycle receiver. */
+export function isLifecycleHookInstalled(port: number = config.get().hookPort): boolean {
+  return hasCurrentLifecycleHook(getClaudeSettings(), getHookCommand(port));
 }
 
 /** Check if keepline hooks are installed */

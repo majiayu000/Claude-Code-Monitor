@@ -10,4 +10,8 @@ export const localServiceState = {
     lastCompletedAt: undefined as Date | undefined,
     lastError: undefined as string | undefined,
   },
+  lifecycleHook: {
+    receiverRunning: false,
+    port: undefined as number | undefined,
+  },
 };

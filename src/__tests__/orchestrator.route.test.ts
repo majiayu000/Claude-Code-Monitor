@@ -328,6 +328,7 @@ describe('Orchestrator Route Contract', () => {
       client: 'codex',
       directory: '/tmp/keepline-old-lost',
       status: 'lost',
+      wasProcessObserved: true,
       title: 'Old lost',
       lastActiveAt: oldLostSessionDate(),
     });

@@ -36,7 +36,7 @@ app.get('/', (c) => {
   const limit = Math.min(Math.max(Number.parseInt(c.req.query('limit') ?? '50', 10) || 50, 1), 100);
   const offset = Math.max(Number.parseInt(c.req.query('offset') ?? '0', 10) || 0, 0);
   // Service-mode reads must stay DB-only; background scans own process detection.
-  const allSessions = sessionRepository.findAllLightweight().map((session) => ({
+  const allSessions = sessionRepository.findOperationalLightweight().map((session) => ({
     ...session,
     processRunning: session.status !== 'lost' && session.status !== 'completed' && !!session.pid,
   }));
@@ -51,6 +51,10 @@ app.get('/', (c) => {
       ...serializeBasicSession(session),
       evidenceSummary: agentSession?.evidenceSummary,
       completionEvidenceId: completion?.id,
+      completionEvidenceWorkItemId: completion?.workItemId,
+      completionEvidenceSource: typeof completion?.metadata?.source === 'string'
+        ? completion.metadata.source
+        : undefined,
     };
   });
   return c.json({

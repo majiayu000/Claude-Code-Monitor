@@ -2,20 +2,27 @@ import type { Server } from 'bun';
 import { runServiceMigrations } from '../local-api/migrations.js';
 import { closeDatabase } from '../infrastructure/database/sqlite.js';
 import { logger } from '../lib/logger.js';
+import { config } from '../lib/config.js';
 import { events } from '../lib/events.js';
 import { createLocalApiApp } from '../local-api/app.js';
 import { localServiceState } from '../local-api/service-state.js';
 import { replaceRuntimeScanStatus, type RuntimeScanSummary } from './runtime-status.js';
+import {
+  startLifecycleReceiver,
+  type LifecycleReceiver,
+} from '../adapters/hook/completion-receiver.js';
 
 const SCAN_RESULT_PREFIX = '__KEEPLINE_SERVICE_SCAN__';
 
 export interface KeeplineService {
   server: Server<unknown>;
+  hookPort: number;
   stop(): Promise<void>;
 }
 
 export interface KeeplineServiceOptions {
   port?: number;
+  hookPort?: number;
   /** Periodic transcript scan interval. Zero disables the periodic timer. */
   scanIntervalMs?: number;
   scanTimeoutMs?: number;
@@ -101,6 +108,9 @@ export async function startKeeplineService(
   options: KeeplineServiceOptions | number = {}
 ): Promise<KeeplineService> {
   const port = typeof options === 'number' ? options : (options.port ?? 3377);
+  const hookPort = typeof options === 'number'
+    ? config.get().hookPort
+    : (options.hookPort ?? config.get().hookPort);
   const configuredScanInterval = typeof options === 'number'
     ? 60_000
     : (options.scanIntervalMs ?? 60_000);
@@ -115,6 +125,9 @@ export async function startKeeplineService(
     : (options.scanOutputLimitBytes ?? DEFAULT_SCAN_OUTPUT_LIMIT_BYTES);
   if (!Number.isFinite(configuredScanInterval) || configuredScanInterval < 0) {
     throw new Error('Service scan interval must be zero or a positive number');
+  }
+  if (!Number.isInteger(hookPort) || hookPort < 0 || hookPort > 65535) {
+    throw new Error('Invalid completion hook port');
   }
   if (!Number.isFinite(scanTimeoutMs) || scanTimeoutMs <= 0 ||
       !Number.isFinite(scanKillGraceMs) || scanKillGraceMs < 0 ||
@@ -134,6 +147,16 @@ export async function startKeeplineService(
       return app.fetch(req, { server: bunServer });
     },
   });
+  let lifecycleReceiver: LifecycleReceiver;
+  try {
+    lifecycleReceiver = startLifecycleReceiver(hookPort);
+  } catch (error) {
+    server.stop(true);
+    closeDatabase();
+    throw error;
+  }
+  localServiceState.lifecycleHook.receiverRunning = true;
+  localServiceState.lifecycleHook.port = lifecycleReceiver.port;
 
   let stopped = false;
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
@@ -235,7 +258,7 @@ export async function startKeeplineService(
 
   // Leave a short window for health/meta requests before transcript parsing begins.
   scheduleScan(250);
-  const handleDispatchCreated = () => {
+  const requestScan = () => {
     if (stopped) return;
     if (localServiceState.scan.running) {
       rescanRequested = true;
@@ -243,16 +266,24 @@ export async function startKeeplineService(
     }
     scheduleScan(250);
   };
-  events.on('dispatch:created', handleDispatchCreated);
+  events.on('dispatch:created', requestScan);
+  events.on('session:turn-ended', requestScan);
+  events.on('session:completed', requestScan);
 
-  logger.info(`Keepline service available at http://${hostname}:${server.port}`);
+  logger.info(
+    `Keepline service available at http://${hostname}:${server.port} ` +
+    `(lifecycle hooks: ${lifecycleReceiver.port})`
+  );
   return {
     server,
+    hookPort: lifecycleReceiver.port,
     async stop() {
       if (stopped) return;
       stopped = true;
       if (scanTimer) clearTimeout(scanTimer);
-      events.off('dispatch:created', handleDispatchCreated);
+      events.off('dispatch:created', requestScan);
+      events.off('session:turn-ended', requestScan);
+      events.off('session:completed', requestScan);
       if (scanProcess) await terminateProcess(scanProcess, scanKillGraceMs);
       if (scanPromise) {
         await Promise.race([
@@ -260,8 +291,14 @@ export async function startKeeplineService(
           new Promise<void>((resolve) => setTimeout(resolve, scanKillGraceMs * 2 + 100)),
         ]);
       }
-      server.stop(true);
-      closeDatabase();
+      try {
+        lifecycleReceiver.stop();
+      } finally {
+        localServiceState.lifecycleHook.receiverRunning = false;
+        localServiceState.lifecycleHook.port = undefined;
+        server.stop(true);
+        closeDatabase();
+      }
     },
   };
 }

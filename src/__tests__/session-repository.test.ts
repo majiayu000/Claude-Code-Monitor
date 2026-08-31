@@ -178,4 +178,51 @@ describe('Session Repository Upsert', () => {
     expect(fetched?.usageStats).toBeUndefined();
     expect(fetched?.toolCalls).toBeUndefined();
   });
+
+  test('keeps unobserved historical lost sessions out of the operational view', () => {
+    const base = {
+      directory: '/tmp/repo',
+      title: 'Session',
+      initialPrompt: 'Prompt',
+      lastActiveAt: new Date('2026-04-13T15:00:00.000Z'),
+      toolCount: 0,
+      messageCount: 1,
+    };
+
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'historical-lost',
+      status: 'lost',
+    });
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'observed-lost',
+      status: 'lost',
+      wasProcessObserved: true,
+    });
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'current-running',
+      status: 'running',
+    });
+    sessionRepository.upsert({
+      ...base,
+      sessionId: 'explicitly-completed',
+      status: 'completed',
+    });
+
+    expect(sessionRepository.findAll()).toHaveLength(4);
+    expect(sessionRepository.findOperational().map((session) => session.sessionId).sort()).toEqual([
+      'current-running',
+      'explicitly-completed',
+      'observed-lost',
+    ]);
+    expect(
+      sessionRepository.findOperationalLightweight().map((session) => session.sessionId).sort()
+    ).toEqual([
+      'current-running',
+      'explicitly-completed',
+      'observed-lost',
+    ]);
+  });
 });

@@ -44,11 +44,15 @@ public struct KeeplineSession: Codable, Hashable, Sendable, Identifiable {
     public let lastActiveAt: Date
     public let evidenceSummary: String?
     public let completionEvidenceID: String?
+    public let completionEvidenceWorkItemID: String?
+    public let completionEvidenceSource: String?
     public let processRunning: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, title, directory, status, lastActiveAt, evidenceSummary, processRunning
         case completionEvidenceID = "completionEvidenceId"
+        case completionEvidenceWorkItemID = "completionEvidenceWorkItemId"
+        case completionEvidenceSource
         case sessionID = "sessionId"
         case runtimeID = "runtimeId"
     }

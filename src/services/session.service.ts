@@ -42,6 +42,16 @@ export interface RuntimeSessionScan<T> {
   failures: RuntimeScanFailure[];
 }
 
+function isGeneratedContextTitle(title: string): boolean {
+  return title === 'Unknown task' ||
+    /^继续[。.!！]?$/.test(title) ||
+    /^<recommended_plugins(?:\s|>)/i.test(title) ||
+    /^<environment_context(?:\s|>)/i.test(title) ||
+    /^#\s*AGENTS\.md instructions for(?:\s|$)/i.test(title) ||
+    /^AGENTS\.md: [^\n]+$/i.test(title) ||
+    /^AGENTS\.md instructions$/i.test(title);
+}
+
 export async function scanRuntimeSessions<T>(
   runtimeId: SessionRuntimeId,
   scan: () => Promise<RuntimeSessionScan<T>>
@@ -127,9 +137,9 @@ export class SessionService {
 
   /** Get sessions needing attention (lost or waiting) */
   getAttentionSessions(): Session[] {
-    const lost = this.repository.findByStatus('lost');
-    const waiting = this.repository.findByStatus('waiting');
-    return [...lost, ...waiting];
+    return this.repository.findOperational().filter(
+      (session) => session.status === 'lost' || session.status === 'waiting'
+    );
   }
 
   /** Sync runtime adapter sessions with running processes */
@@ -217,9 +227,9 @@ export class SessionService {
           // Update existing session
           const wasLost = existing.status !== 'lost' && nextStatus === 'lost';
 
-          // Update title if current one is Unknown and we have new info
+          // Replace only generated context noise; preserve normal and user-edited titles.
           const shouldUpdateTitle =
-            existing.title === 'Unknown task' &&
+            isGeneratedContextTitle(existing.title) &&
             agentSession.firstMessage &&
             agentSession.firstMessage !== 'Unknown task';
 
@@ -247,6 +257,7 @@ export class SessionService {
             isSubAgent: agentSession.isSubAgent,
             usageStats: agentSession.usageStats,
             toolCalls: agentSession.toolCalls,
+            ...(process && { wasProcessObserved: true }),
           });
           existingSessionMap.set(agentSession.sessionId, updatedSession);
 
@@ -285,6 +296,7 @@ export class SessionService {
             isSubAgent: agentSession.isSubAgent,
             usageStats: agentSession.usageStats,
             toolCalls: agentSession.toolCalls,
+            ...(process && { wasProcessObserved: true }),
           });
           existingSessionMap.set(agentSession.sessionId, newSession);
           emit('session:discovered', { session: newSession });

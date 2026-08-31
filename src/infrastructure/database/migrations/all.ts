@@ -17,6 +17,7 @@ import { migration009 } from './009_session_digests.js';
 import { migration010 } from './010_stash_integration.js';
 import { migration011 } from './011_dispatch_correlation_deadline.js';
 import { migration012 } from './012_unique_dispatch_session_claim.js';
+import { migration013 } from './013_session_process_observation.js';
 
 /** All available migrations */
 export const allMigrations: Migration[] = [
@@ -32,4 +33,5 @@ export const allMigrations: Migration[] = [
   migration010,
   migration011,
   migration012,
+  migration013,
 ];

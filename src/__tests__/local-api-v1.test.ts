@@ -52,13 +52,21 @@ describe('Local API v1', () => {
       lastActiveAt: session.lastActiveAt,
       evidenceSummary: 'Checks completed',
     });
+    const item = workItemRepository.create({ title: 'Evidence owner' });
+    workItemEvidenceRepository.createSessionLink({
+      workItemId: item.id,
+      agentSessionId: agentSession.id,
+      linkSource: 'user',
+    });
     const evidence = workItemEvidenceRepository.createProgressEvidence({
+      workItemId: item.id,
       agentSessionId: agentSession.id,
       runtimeId: 'codex',
       kind: 'test_result',
       outcome: 'completed',
       confidence: 'explicit',
       summary: 'Checks completed',
+      metadata: { source: 'agent_completion_claim' },
     });
 
     const response = await app.fetch(new Request('http://localhost/api/v1/sessions', {
@@ -66,12 +74,20 @@ describe('Local API v1', () => {
     }));
     expect(response.status).toBe(200);
     const body = await response.json() as {
-      data: { sessions: Array<{ sessionId: string; runtimeId: string; completionEvidenceId?: string }> };
+      data: { sessions: Array<{
+        sessionId: string;
+        runtimeId: string;
+        completionEvidenceId?: string;
+        completionEvidenceWorkItemId?: string;
+        completionEvidenceSource?: string;
+      }> };
     };
     expect(body.data.sessions).toContainEqual(expect.objectContaining({
       sessionId: session.sessionId,
       runtimeId: 'codex',
       completionEvidenceId: evidence.id,
+      completionEvidenceWorkItemId: item.id,
+      completionEvidenceSource: 'agent_completion_claim',
     }));
   });
 
