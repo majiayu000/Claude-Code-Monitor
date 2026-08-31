@@ -198,3 +198,65 @@ public struct CompletionReviewResult: Codable, Hashable, Sendable {
     public let review: CompletionReview
     public let item: KeeplineWorkItem
 }
+
+public enum KeeplineRecoveryMethod: String, Codable, Hashable, Sendable {
+    case resume
+    case `continue`
+    case new
+}
+
+public enum KeeplineTerminalApp: String, Codable, Hashable, Sendable {
+    case automatic = "auto"
+    case terminal = "Terminal"
+    case iTerm = "iTerm"
+    case warp = "Warp"
+}
+
+public struct KeeplineRecoveryPreview: Codable, Hashable, Sendable {
+    public let sessionID: String
+    public let runtimeID: KeeplineRuntimeID
+    public let method: KeeplineRecoveryMethod
+    public let executable: String
+    public let arguments: [String]
+    public let directory: String
+    public let createsNewSession: Bool
+    public let confirmationID: String
+
+    enum CodingKeys: String, CodingKey {
+        case method, executable, arguments, directory, createsNewSession
+        case sessionID = "sessionId"
+        case runtimeID = "runtimeId"
+        case confirmationID = "confirmationId"
+    }
+}
+
+public struct RecoveryExecutionRequest: Codable, Hashable, Sendable {
+    public var confirmationID: String
+    public var terminalApp: KeeplineTerminalApp
+    public var idempotencyKey: String
+
+    public init(
+        confirmationID: String,
+        terminalApp: KeeplineTerminalApp = .automatic,
+        idempotencyKey: String
+    ) {
+        self.confirmationID = confirmationID
+        self.terminalApp = terminalApp
+        self.idempotencyKey = idempotencyKey
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case terminalApp, idempotencyKey
+        case confirmationID = "confirmationId"
+    }
+}
+
+public struct KeeplineRecoveryExecution: Codable, Hashable, Sendable {
+    public let preview: KeeplineRecoveryPreview
+    public let executed: Bool
+
+    public init(preview: KeeplineRecoveryPreview, executed: Bool) {
+        self.preview = preview
+        self.executed = executed
+    }
+}

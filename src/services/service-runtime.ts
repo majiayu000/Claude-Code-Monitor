@@ -5,6 +5,7 @@ import { logger } from '../lib/logger.js';
 import { config } from '../lib/config.js';
 import { events } from '../lib/events.js';
 import { createLocalApiApp } from '../local-api/app.js';
+import { createRecoveryProcessRunner } from '../local-api/routes/recovery.js';
 import { localServiceState } from '../local-api/service-state.js';
 import { replaceRuntimeScanStatus, type RuntimeScanSummary } from './runtime-status.js';
 import {
@@ -30,6 +31,8 @@ export interface KeeplineServiceOptions {
   scanOutputLimitBytes?: number;
   /** Test/support override. Production resolves the isolated scan from the current entrypoint. */
   scanCommand?: string[];
+  /** Test/support override. Production resolves recovery through an isolated child process. */
+  recoveryCommand?: string[];
 }
 
 const DEFAULT_SCAN_TIMEOUT_MS = 30_000;
@@ -134,8 +137,16 @@ export async function startKeeplineService(
       !Number.isInteger(scanOutputLimitBytes) || scanOutputLimitBytes < 1_024) {
     throw new Error('Invalid service scan process limits');
   }
+  const entrypoint = process.argv[1];
+  const configuredRecoveryCommand = typeof options === 'number'
+    ? undefined
+    : options.recoveryCommand;
+  const recoveryCommand = configuredRecoveryCommand ??
+    (entrypoint ? [process.execPath, entrypoint, '_service-recovery'] : []);
   runServiceMigrations();
-  const app = createLocalApiApp();
+  const app = createLocalApiApp({
+    recoveryRunner: createRecoveryProcessRunner(recoveryCommand),
+  });
   const hostname = '127.0.0.1';
   const server = Bun.serve({
     hostname,
@@ -180,7 +191,6 @@ export async function startKeeplineService(
     localServiceState.scan.lastStartedAt = new Date();
     localServiceState.scan.lastError = undefined;
     try {
-      const entrypoint = process.argv[1];
       const command = typeof options === 'number' ? undefined : options.scanCommand;
       if (!command && !entrypoint) throw new Error('Unable to resolve Keepline service entrypoint');
       const child = Bun.spawn(

@@ -1,0 +1,182 @@
+openapi: 3.2.0
+info:
+  title: Keepline Local API recovery actions
+  version: 1.0.0
+servers:
+  - url: http://127.0.0.1:3377/api/v1
+paths:
+  /sessions/{sessionId}/recovery-preview:
+    get:
+      summary: Preview the recommended recovery action for a lost session
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      responses:
+        '200':
+          description: Recovery preview generated from current server state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryPreviewEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /sessions/{sessionId}/recover:
+    post:
+      summary: Open the confirmed recovery action in an external terminal
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteRecoveryRequest'
+      responses:
+        '200':
+          description: The external terminal action was opened or an identical request was replayed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecoveryExecutionEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 8
+  schemas:
+    RecoveryPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - sessionId
+        - runtimeId
+        - method
+        - executable
+        - arguments
+        - directory
+        - createsNewSession
+        - confirmationId
+      properties:
+        sessionId:
+          type: string
+        runtimeId:
+          type: string
+          enum: [codex, claude-code]
+        method:
+          type: string
+          enum: [resume, continue, new]
+        executable:
+          type: string
+          enum: [codex, claude, claude-code]
+        arguments:
+          type: array
+          items:
+            type: string
+        directory:
+          type: string
+        createsNewSession:
+          type: boolean
+        confirmationId:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    ExecuteRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmationId, terminalApp, idempotencyKey]
+      properties:
+        confirmationId:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        terminalApp:
+          type: string
+          enum: [auto, Terminal, iTerm, Warp]
+        idempotencyKey:
+          type: string
+          minLength: 8
+          maxLength: 128
+    RecoveryPreviewEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          required: [preview]
+          properties:
+            preview:
+              $ref: '#/components/schemas/RecoveryPreview'
+    RecoveryExecutionEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          const: true
+        data:
+          type: object
+          required: [preview, executed]
+          properties:
+            preview:
+              $ref: '#/components/schemas/RecoveryPreview'
+            executed:
+              type: boolean
+    ErrorEnvelope:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthorized:
+      description: Missing or invalid local bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Session not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Session is not recoverable, preview changed, or idempotency key conflicts
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

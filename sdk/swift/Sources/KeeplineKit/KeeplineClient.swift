@@ -47,6 +47,7 @@ private struct SessionListData: Decodable { let sessions: [KeeplineSession] }
 private struct WorkItemData: Decodable { let item: KeeplineWorkItem }
 private struct SessionLinkData: Decodable { let link: KeeplineSessionLink }
 private struct DispatchData: Decodable { let dispatch: KeeplineDispatch }
+private struct RecoveryPreviewData: Decodable { let preview: KeeplineRecoveryPreview }
 
 func makeKeeplineDecoder() -> JSONDecoder {
     let decoder = JSONDecoder()
@@ -85,6 +86,26 @@ public actor KeeplineClient {
             response: SessionListData.self
         )
         return data.sessions
+    }
+
+    public func recoveryPreview(sessionID: String) async throws -> KeeplineRecoveryPreview {
+        let data = try await send(
+            path: ["sessions", sessionID, "recovery-preview"],
+            response: RecoveryPreviewData.self
+        )
+        return data.preview
+    }
+
+    public func executeRecovery(
+        sessionID: String,
+        request: RecoveryExecutionRequest
+    ) async throws -> KeeplineRecoveryExecution {
+        try await send(
+            path: ["sessions", sessionID, "recover"],
+            method: "POST",
+            body: request,
+            response: KeeplineRecoveryExecution.self
+        )
     }
 
     public func upsertExternalWorkItem(
