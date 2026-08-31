@@ -41,6 +41,8 @@ app.get('/meta', (c) => {
     capabilities: [
       'sessions.list',
       'sessions.complete',
+      'sessions.recovery.preview',
+      'sessions.recovery.execute',
       'work-items.external-upsert',
       'work-items.session-link',
       'work-items.completion-review',

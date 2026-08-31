@@ -8,6 +8,7 @@ interface ServiceOptions {
 
 interface ServiceRuntimeOptions {
   scanCommand?: string[];
+  recoveryCommand?: string[];
 }
 
 export async function serviceCommand(
@@ -28,6 +29,7 @@ export async function serviceCommand(
     port,
     scanIntervalMs: scanIntervalSeconds * 1000,
     scanCommand: runtimeOptions.scanCommand,
+    recoveryCommand: runtimeOptions.recoveryCommand,
   });
   let shuttingDown = false;
   const shutdown = async () => {

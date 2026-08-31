@@ -2,6 +2,7 @@
 
 import { serviceCommand } from './cli/service.js';
 import { serviceScanCommand } from './cli/service-scan.js';
+import { serviceRecoveryCommand } from './cli/service-recovery.js';
 import { config } from './lib/config.js';
 import { logger } from './lib/logger.js';
 
@@ -62,8 +63,11 @@ const args = commandArguments();
 if (args[0] === '_service-scan') {
   if (args.length !== 1) throw new Error('_service-scan does not accept arguments');
   await serviceScanCommand();
+} else if (args[0] === '_service-recovery') {
+  await serviceRecoveryCommand(args.slice(1));
 } else {
   await serviceCommand(parseServiceOptions(args), {
     scanCommand: [process.execPath, '_service-scan'],
+    recoveryCommand: [process.execPath, '_service-recovery'],
   });
 }
