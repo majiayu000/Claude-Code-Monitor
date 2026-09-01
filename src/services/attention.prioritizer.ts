@@ -15,6 +15,15 @@ export type AttentionSeverity = 'critical' | 'warning' | 'info';
 
 export type RecommendedAction = 'review' | 'recover' | 'monitor' | 'none';
 
+export type AgentBoardLane = 'needs_you' | 'working' | 'finished' | 'paused';
+
+export const AGENT_BOARD_LANE_ORDER: readonly AgentBoardLane[] = [
+  'needs_you',
+  'working',
+  'finished',
+  'paused',
+];
+
 export interface AttentionReason {
   code: AttentionReasonCode;
   severity: AttentionSeverity;
@@ -63,6 +72,7 @@ export interface AttentionIntent {
 
 export interface AttentionQueueItem {
   rank: number;
+  lane: AgentBoardLane;
   sessionId: string;
   client: AgentClient;
   status: SessionStatus;
@@ -239,6 +249,7 @@ function buildAttentionItem(
 
   return {
     rank: 0,
+    lane: getAgentBoardLane(session.status),
     sessionId: session.sessionId,
     client: session.client,
     status: session.status,
@@ -254,6 +265,20 @@ function buildAttentionItem(
     usageCost,
     digest: options.digest ? serializeSessionDigest(options.digest) : undefined,
   };
+}
+
+export function getAgentBoardLane(status: SessionStatus): AgentBoardLane {
+  switch (status) {
+    case 'waiting':
+    case 'lost':
+      return 'needs_you';
+    case 'running':
+      return 'working';
+    case 'completed':
+      return 'finished';
+    case 'idle':
+      return 'paused';
+  }
 }
 
 function getPriorityScore(reasons: AttentionReason[]): number {
@@ -304,10 +329,11 @@ function buildSessionIntent(
   const prompt = compactText(session.initialPrompt, MAX_ATTENTION_CONTEXT_LENGTH);
   const promptIsNoise = isInstructionNoise(session.initialPrompt);
   const titleIsNoise = isInstructionNoise(session.title);
-  if (promptIsNoise || titleIsNoise) noiseFlags.push('instructions_heavy');
+  const digestIsNoise = isInstructionNoise(digest?.summary);
+  if (promptIsNoise || titleIsNoise || digestIsNoise) noiseFlags.push('instructions_heavy');
 
   const promptTask = promptIsNoise ? undefined : intentText(session.initialPrompt);
-  const digestTask = intentText(digest?.summary);
+  const digestTask = digestIsNoise ? undefined : intentText(digest?.summary);
   const titleTask = titleIsNoise ? undefined : intentText(session.title);
   const lastMessage = intentText(session.lastMessage);
   const taskMessage = meaningfulTaskMessage(session.lastMessage);
@@ -366,14 +392,20 @@ function intentText(value: string | undefined): string | undefined {
 
 function isInstructionNoise(value: string | undefined): boolean {
   if (!value) return false;
-  const lower = value.toLowerCase();
+  const compact = value.trim();
+  const lower = compact.toLowerCase();
+  const withoutAttachments = compact
+    .replace(/<image\b[^>]*>/giu, '')
+    .trim();
   return lower.includes('agents.md instructions') ||
     lower.startsWith('agents.md') ||
     lower.startsWith('# agents.md') ||
     lower.includes('<instructions>') ||
     lower.includes('vibeguard-start') ||
     lower.includes('vibeguard') ||
-    lower.includes('files called agents.md');
+    lower.includes('files called agents.md') ||
+    lower.startsWith('<image ') ||
+    withoutAttachments.length === 0;
 }
 
 function meaningfulTaskMessage(value: string | undefined): string | undefined {
@@ -466,8 +498,15 @@ function dedupeNoiseFlags(flags: AttentionIntentNoiseFlag[]): AttentionIntentNoi
 }
 
 function compareAttentionItems(a: AttentionQueueItem, b: AttentionQueueItem): number {
-  const scoreComparison = b.score - a.score;
-  if (scoreComparison !== 0) return scoreComparison;
+  const laneComparison = AGENT_BOARD_LANE_ORDER.indexOf(a.lane) -
+    AGENT_BOARD_LANE_ORDER.indexOf(b.lane);
+  if (laneComparison !== 0) return laneComparison;
+
+  if (a.lane === 'needs_you' && a.status !== b.status) {
+    if (a.status === 'waiting') return -1;
+    if (b.status === 'waiting') return 1;
+  }
+
   const activityComparison = b.lastActiveAt.getTime() - a.lastActiveAt.getTime();
   if (activityComparison !== 0) return activityComparison;
   return a.sessionId.localeCompare(b.sessionId);

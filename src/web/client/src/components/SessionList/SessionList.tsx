@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, useCallback } from 'react'
+import { useState, useMemo, memo, useCallback, useEffect } from 'react'
 import type { Session, SessionFullData, PaginationInfo, TerminalApp } from '@/types'
 import { SessionCard } from '@/components/SessionCard'
 import { Button } from '@/components/Button'
@@ -21,6 +21,8 @@ interface SessionListProps {
   hasActiveFilters?: boolean
   totalCount?: number
   globalMatchCount?: number
+  initiallyExpandedSessionId?: string
+  onInitialExpansionConsumed?: () => void
 }
 
 type SessionStatus = 'running' | 'waiting' | 'idle' | 'lost' | 'completed'
@@ -47,7 +49,15 @@ export const SessionList = memo(function SessionList({
   hasActiveFilters = false,
   totalCount = sessions.length,
   globalMatchCount = pagination?.total ?? sessions.length,
+  initiallyExpandedSessionId,
+  onInitialExpansionConsumed,
 }: SessionListProps) {
+  useEffect(() => {
+    if (initiallyExpandedSessionId) {
+      onInitialExpansionConsumed?.()
+    }
+  }, [initiallyExpandedSessionId, onInitialExpansionConsumed])
+
   // Memoize grouped and sorted sessions
   const groupedSessions = useMemo(() => {
     const groups: GroupedSessions = {
@@ -107,6 +117,7 @@ export const SessionList = memo(function SessionList({
           getSessionFull={getSessionFull}
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
         />
       )}
       {groupedSessions.waiting.length > 0 && (
@@ -119,6 +130,7 @@ export const SessionList = memo(function SessionList({
           getSessionFull={getSessionFull}
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
         />
       )}
       {groupedSessions.idle.length > 0 && (
@@ -131,6 +143,7 @@ export const SessionList = memo(function SessionList({
           getSessionFull={getSessionFull}
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
         />
       )}
       {/* Secondary: Lost, Completed */}
@@ -144,6 +157,7 @@ export const SessionList = memo(function SessionList({
           getSessionFull={getSessionFull}
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
         />
       )}
       {groupedSessions.completed.length > 0 && (
@@ -157,6 +171,7 @@ export const SessionList = memo(function SessionList({
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
           defaultCollapsed
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
         />
       )}
 
@@ -186,6 +201,7 @@ interface SessionGroupProps {
   loadSessionFull?: (sessionId: string) => Promise<SessionFullData | null>
   isLoadingFull?: (sessionId: string) => boolean
   defaultCollapsed?: boolean
+  initiallyExpandedSessionId?: string
 }
 
 const SessionGroup = memo(function SessionGroup({
@@ -197,7 +213,8 @@ const SessionGroup = memo(function SessionGroup({
   getSessionFull,
   loadSessionFull,
   isLoadingFull,
-  defaultCollapsed = false
+  defaultCollapsed = false,
+  initiallyExpandedSessionId,
 }: SessionGroupProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
 
@@ -223,6 +240,7 @@ const SessionGroup = memo(function SessionGroup({
               getSessionFull={getSessionFull}
               loadSessionFull={loadSessionFull}
               isLoadingFull={isLoadingFull}
+              defaultExpanded={session.sessionId === initiallyExpandedSessionId}
             />
           ))}
         </div>

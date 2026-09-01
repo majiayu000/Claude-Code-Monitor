@@ -37,6 +37,7 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilters, setStatusFilters] = useState<Set<SessionStatus>>(new Set())
   const [runtimeFilter, setRuntimeFilter] = useState<RuntimeFilter>('all')
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
 
   const {
     sessions,
@@ -162,7 +163,12 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
     setStatusFilters(new Set())
     setRuntimeFilter('all')
     setSearchQuery(sessionId)
+    setExpandedSessionId(sessionId)
     setActiveTab('sessions')
+  }, [])
+
+  const handleInitialExpansionConsumed = useCallback(() => {
+    setExpandedSessionId(null)
   }, [])
 
   const handleCopySessionId = useCallback(async (sessionId: string) => {
@@ -248,6 +254,8 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
               hasActiveFilters={hasActiveFilters}
               totalCount={totalSessionCount}
               globalMatchCount={matchedSessionCount}
+              initiallyExpandedSessionId={expandedSessionId ?? undefined}
+              onInitialExpansionConsumed={handleInitialExpansionConsumed}
             />
           </>
         )}

@@ -10,6 +10,7 @@ export type OrchestratorReasonCode =
 
 export type OrchestratorSeverity = 'critical' | 'warning' | 'info'
 export type OrchestratorRecommendedAction = 'review' | 'recover' | 'monitor' | 'none'
+export type AgentBoardLane = 'needs_you' | 'working' | 'finished' | 'paused'
 export type OrchestratorDigestSource = 'deterministic' | 'local_model'
 export type OrchestratorDigestStatus = 'fresh' | 'stale' | 'error'
 
@@ -75,6 +76,7 @@ export interface OrchestratorDigest {
 
 export interface OrchestratorQueueItem {
   rank: number
+  lane: AgentBoardLane
   sessionId: string
   client: AgentClient
   status: SessionStatus
