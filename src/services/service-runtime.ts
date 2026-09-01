@@ -1,6 +1,11 @@
 import type { Server } from 'bun';
+import {
+  startLifecycleReceiver,
+  type LifecycleReceiver,
+} from '../adapters/hook/completion-receiver.js';
 import { runServiceMigrations } from '../local-api/migrations.js';
 import { closeDatabase } from '../infrastructure/database/sqlite.js';
+import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 import { logger } from '../lib/logger.js';
 import { config } from '../lib/config.js';
 import { events } from '../lib/events.js';
@@ -8,10 +13,6 @@ import { createLocalApiApp } from '../local-api/app.js';
 import { createRecoveryProcessRunner } from '../local-api/routes/recovery.js';
 import { localServiceState } from '../local-api/service-state.js';
 import { replaceRuntimeScanStatus, type RuntimeScanSummary } from './runtime-status.js';
-import {
-  startLifecycleReceiver,
-  type LifecycleReceiver,
-} from '../adapters/hook/completion-receiver.js';
 
 const SCAN_RESULT_PREFIX = '__KEEPLINE_SERVICE_SCAN__';
 
@@ -144,6 +145,12 @@ export async function startKeeplineService(
   const recoveryCommand = configuredRecoveryCommand ??
     (entrypoint ? [process.execPath, entrypoint, '_service-recovery'] : []);
   runServiceMigrations();
+  const interruptedSessions = sessionRepository.markActiveSessionsInterrupted();
+  if (interruptedSessions > 0) {
+    logger.info(
+      `Marked ${interruptedSessions} persisted live session(s) interrupted before reconciliation`
+    );
+  }
   const app = createLocalApiApp({
     recoveryRunner: createRecoveryProcessRunner(recoveryCommand),
   });

@@ -32,9 +32,9 @@ export function getSessionNotificationEvents(
     if (settings.onStatusChange && prev.status !== session.status) {
       if (settings.onSessionLost && session.status === 'lost') {
         events.push({
-          title: 'Session Lost',
+          title: 'Session Interrupted',
           options: {
-            body: `Session "${session.title || session.sessionId}" has been lost`,
+            body: `Session "${session.title || session.sessionId}" was interrupted and may be recoverable`,
             tag: `session-lost-${session.sessionId}`,
           },
         })

@@ -12,6 +12,7 @@ import { emit } from '../lib/events.js';
 import { initializeMemoryService } from './memory.service.js';
 import { runRetentionCleanup } from './retention.service.js';
 import { initPricing } from './usage.pricing.js';
+import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 
 let scanInterval: NodeJS.Timeout | null = null;
 let retentionInterval: NodeJS.Timeout | null = null;
@@ -54,6 +55,12 @@ export async function startScheduler(): Promise<void> {
 
   // Initialize database
   runMigrations();
+  const interruptedSessions = sessionRepository.markActiveSessionsInterrupted();
+  if (interruptedSessions > 0) {
+    logger.info(
+      `Marked ${interruptedSessions} persisted live session(s) interrupted before reconciliation`
+    );
+  }
 
   // Initialize pricing before scan cycles. The pricing module falls back to
   // defaults if remote LiteLLM pricing cannot be fetched.

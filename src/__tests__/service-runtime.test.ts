@@ -3,9 +3,10 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { emit } from '../lib/events.js';
+import { resetDatabase } from '../db/migrations.js';
+import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 import { serviceMigrationVersions } from '../local-api/migrations.js';
 import { startKeeplineService, type KeeplineService } from '../services/service-runtime.js';
-import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 import { workItemEvidenceRepository } from '../infrastructure/database/repositories/work-item-evidence.repository.js';
 import { workItemRepository } from '../infrastructure/database/repositories/work-item.repository.js';
 import { getDatabase } from '../infrastructure/database/sqlite.js';
@@ -361,6 +362,32 @@ describe('service runtime isolation', () => {
     await liveService.stop();
     liveService = undefined;
     await expect(fetch(`http://127.0.0.1:${hookPort}/health`)).rejects.toThrow();
+  });
+
+  test('invalidates stale live state before serving the first snapshot', async () => {
+    resetDatabase();
+    sessionRepository.upsert({
+      sessionId: 'restart-service-running',
+      directory: '/tmp/repo',
+      status: 'running',
+      title: 'Stale live session',
+      initialPrompt: 'Prompt',
+      pid: 9876,
+      tty: 'ttys004',
+      lastActiveAt: new Date('2026-04-13T15:00:00.000Z'),
+    });
+
+    liveService = await startKeeplineService({
+      port: 0,
+      hookPort: 0,
+      scanIntervalMs: 0,
+      scanCommand: successfulScanCommand(),
+    });
+
+    const persisted = sessionRepository.findBySessionId('restart-service-running');
+    expect(persisted?.status).toBe('lost');
+    expect(persisted?.pid).toBeUndefined();
+    expect(persisted?.tty).toBeUndefined();
   });
 
   test('keeps the static service graph free of heavy app-only modules', async () => {

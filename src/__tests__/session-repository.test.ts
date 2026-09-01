@@ -64,6 +64,44 @@ describe('Session Repository Upsert', () => {
     expect(updated.tty).toBeUndefined();
   });
 
+  test('marks persisted live sessions interrupted before restart reconciliation', () => {
+    for (const [sessionId, status] of [
+      ['restart-running', 'running'],
+      ['restart-waiting', 'waiting'],
+      ['restart-idle', 'idle'],
+    ] as const) {
+      sessionRepository.upsert({
+        sessionId,
+        directory: '/tmp/repo',
+        status,
+        title: sessionId,
+        initialPrompt: 'Prompt',
+        pid: 4321,
+        tty: 'ttys003',
+        lastActiveAt: new Date('2026-04-13T15:00:00.000Z'),
+      });
+    }
+    sessionRepository.upsert({
+      sessionId: 'restart-completed',
+      directory: '/tmp/repo',
+      status: 'completed',
+      title: 'Completed',
+      initialPrompt: 'Prompt',
+      completedAt: new Date('2026-04-13T16:00:00.000Z'),
+      lastActiveAt: new Date('2026-04-13T16:00:00.000Z'),
+    });
+
+    expect(sessionRepository.markActiveSessionsInterrupted()).toBe(3);
+
+    for (const sessionId of ['restart-running', 'restart-waiting', 'restart-idle']) {
+      const session = sessionRepository.findBySessionId(sessionId);
+      expect(session?.status).toBe('lost');
+      expect(session?.pid).toBeUndefined();
+      expect(session?.tty).toBeUndefined();
+    }
+    expect(sessionRepository.findBySessionId('restart-completed')?.status).toBe('completed');
+  });
+
   test('persists multi-agent metadata, usage stats, and tool calls (issue #13)', () => {
     const created = sessionRepository.upsert({
       sessionId: 'session-metadata',

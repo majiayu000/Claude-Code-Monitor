@@ -35,7 +35,7 @@ export const Header = memo(function Header({
     <header className={styles.header} role="banner">
       <div className={styles.brand}>
         <h1 className={styles.title}>KEEPLINE</h1>
-        <span className={styles.subtitle}>Agent runtime session control center</span>
+        <span className={styles.subtitle}>Standalone agent runtime &amp; recovery</span>
       </div>
       <div className={styles.actions}>
         <ConnectionStatus status={connectionStatus} />

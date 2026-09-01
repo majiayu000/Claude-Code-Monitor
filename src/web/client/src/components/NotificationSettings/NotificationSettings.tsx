@@ -79,8 +79,8 @@ export const NotificationSettings = memo(function NotificationSettings({
 
               <div className={styles.settingItem}>
                 <div className={styles.settingLabel}>
-                  <span className={styles.settingName}>Session Lost</span>
-                  <span className={styles.settingDesc}>Alert when a session is lost</span>
+                  <span className={styles.settingName}>Session Interrupted</span>
+                  <span className={styles.settingDesc}>Alert when a session is interrupted</span>
                 </div>
                 <button
                   className={`${styles.toggle} ${settings.onSessionLost ? styles.active : ''}`}
