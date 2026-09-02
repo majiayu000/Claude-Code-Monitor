@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { basename } from 'path';
 import type { AggregatedSession } from '../services/session.types.js';
 import { buildAttentionOverview } from '../services/attention.prioritizer.js';
 import type { SessionDigest } from '../domain/orchestrator/index.js';
@@ -270,7 +271,7 @@ describe('buildAttentionOverview', () => {
 
     expect(overview.items[0].project).toMatchObject({
       rootPath: process.cwd(),
-      name: 'keepline-dense-overview',
+      name: basename(process.cwd()),
       source: 'git-root',
     });
   });
