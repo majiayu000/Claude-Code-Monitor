@@ -380,7 +380,7 @@
   position: absolute;
   z-index: 20;
   right: 0;
-  bottom: calc(100% + 5px);
+  top: calc(100% + 5px);
   display: grid;
   width: 138px;
   padding: 4px;

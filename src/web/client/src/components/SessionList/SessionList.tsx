@@ -52,12 +52,6 @@ export const SessionList = memo(function SessionList({
   initiallyExpandedSessionId,
   onInitialExpansionConsumed,
 }: SessionListProps) {
-  useEffect(() => {
-    if (initiallyExpandedSessionId) {
-      onInitialExpansionConsumed?.()
-    }
-  }, [initiallyExpandedSessionId, onInitialExpansionConsumed])
-
   // Memoize grouped and sorted sessions
   const groupedSessions = useMemo(() => {
     const groups: GroupedSessions = {
@@ -118,6 +112,7 @@ export const SessionList = memo(function SessionList({
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
           initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
       {groupedSessions.waiting.length > 0 && (
@@ -131,6 +126,7 @@ export const SessionList = memo(function SessionList({
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
           initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
       {groupedSessions.idle.length > 0 && (
@@ -144,6 +140,7 @@ export const SessionList = memo(function SessionList({
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
           initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
       {/* Secondary: Lost, Completed */}
@@ -158,6 +155,7 @@ export const SessionList = memo(function SessionList({
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
           initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
       {groupedSessions.completed.length > 0 && (
@@ -172,6 +170,7 @@ export const SessionList = memo(function SessionList({
           isLoadingFull={isLoadingFull}
           defaultCollapsed
           initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
 
@@ -202,6 +201,7 @@ interface SessionGroupProps {
   isLoadingFull?: (sessionId: string) => boolean
   defaultCollapsed?: boolean
   initiallyExpandedSessionId?: string
+  onInitialExpansionConsumed?: () => void
 }
 
 const SessionGroup = memo(function SessionGroup({
@@ -215,8 +215,23 @@ const SessionGroup = memo(function SessionGroup({
   isLoadingFull,
   defaultCollapsed = false,
   initiallyExpandedSessionId,
+  onInitialExpansionConsumed,
 }: SessionGroupProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const hasExpansionTarget = Boolean(
+    initiallyExpandedSessionId &&
+    sessions.some((session) => session.sessionId === initiallyExpandedSessionId)
+  )
+
+  useEffect(() => {
+    if (hasExpansionTarget) setCollapsed(false)
+  }, [hasExpansionTarget])
+
+  useEffect(() => {
+    if (hasExpansionTarget && !collapsed) {
+      onInitialExpansionConsumed?.()
+    }
+  }, [collapsed, hasExpansionTarget, onInitialExpansionConsumed])
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed(prev => !prev)

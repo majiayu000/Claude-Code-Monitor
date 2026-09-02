@@ -93,6 +93,12 @@ function RowActions({
     : onOpenSession
       ? () => runAction(() => onOpenSession(item.sessionId))
       : undefined
+  const hasSecondaryActions = Boolean(
+    (canRecover && onOpenSession) ||
+    canStop ||
+    canComplete ||
+    (canRecover && onCopyRecoveryCommand)
+  )
 
   return (
     <div className={styles.actions} role="group" aria-label={`Actions for ${item.sessionId}`}>
@@ -105,7 +111,7 @@ function RowActions({
           {canRecover ? 'Continue in terminal' : 'Open'}
         </button>
       )}
-      {(onOpenSession || canStop || canComplete || (canRecover && onCopyRecoveryCommand)) && (
+      {hasSecondaryActions && (
         <details className={styles.actionMenu}>
           <summary aria-label={`More actions for ${taskIdentity(item)}`}>•••</summary>
           <div className={styles.actionMenuList}>

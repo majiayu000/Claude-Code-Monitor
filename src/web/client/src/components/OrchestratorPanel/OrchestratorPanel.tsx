@@ -36,7 +36,7 @@ export const OrchestratorPanel = memo(function OrchestratorPanel({
   onComplete,
   onCopyRecoveryCommand,
 }: OrchestratorPanelProps) {
-  const { overview, loading, error, refresh } = useOrchestratorOverview(token)
+  const { overview, loading, error, realtime, refresh } = useOrchestratorOverview(token)
   const stats = overview?.stats ?? {
     totalCandidates: 0,
     needingAttention: 0,
@@ -59,7 +59,7 @@ export const OrchestratorPanel = memo(function OrchestratorPanel({
           <div className={styles.eyebrow}>Agent operations</div>
           <div className={styles.titleLine}>
             <h2 className={styles.title}>Board</h2>
-            {overview && <span className={styles.liveMark}>Live</span>}
+            {overview && <span className={styles.liveMark}>{realtime ? 'Live' : 'Snapshot'}</span>}
           </div>
           <div className={styles.meta}>
             {overview
