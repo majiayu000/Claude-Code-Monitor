@@ -27,7 +27,9 @@ Runtime transitions and evidence:
   `running`; `Stop` means the response turn ended and maps to `waiting`.
 - A newer hook observation stays authoritative while its matched process is
   alive. Transcript activity and the existing process/CPU detector remain the
-  fallback when no newer hook observation exists.
+  fallback when no newer hook observation exists. Persist the source of the
+  accepted status so this distinction survives a Keepline restart; a status
+  last accepted from a scan must be recomputed from current process evidence.
 - Any live state moves to `lost` when reconciliation can no longer match its
   process.
 - `lost` moves back to a live state after a successful recovery and process
@@ -100,6 +102,15 @@ Scores, cost, and stale warnings do not move cards between lanes.
 - Preserve meaningful text following image attachment tags. Board lane ordering
   must not replace score ordering for the existing CLI attention queue.
 - Never render an overflow trigger without at least one available action.
+- Treat lifecycle-hook support and agent completion claims as separate
+  capabilities. Codex completion claims remain manual-only until its receiver
+  records them; Claude may advertise hook claims only when configured.
+- Initialize the full runtime session identity and working directory before a
+  tool event updates activity, even when `SessionStart` was missed.
+- Label `lost` sessions as Recoverable only when recovery is actually
+  available; otherwise label them Lost.
+- Report hook installation as none, partial, or all. Any installed target with
+  no healthy receiver is degraded, including a Claude-only installation.
 
 ## Verification
 
