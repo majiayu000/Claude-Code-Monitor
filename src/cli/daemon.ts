@@ -46,7 +46,7 @@ async function startDaemonAction(options: DaemonOptions): Promise<void> {
 
   // Install hooks if requested
   if (options.hooks) {
-    console.log(chalk.gray('Installing Claude hooks...'));
+    console.log(chalk.gray('Installing Claude Code and Codex hooks...'));
     installHooks();
   }
 
@@ -65,7 +65,7 @@ async function stopDaemonAction(options: DaemonOptions): Promise<void> {
 
   // Uninstall hooks if requested
   if (options.hooks) {
-    console.log(chalk.gray('Uninstalling Claude hooks...'));
+    console.log(chalk.gray('Uninstalling Claude Code and Codex hooks...'));
     uninstallHooks();
   }
 

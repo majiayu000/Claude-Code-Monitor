@@ -253,7 +253,7 @@ keepline memory export <id>   # Export as recovery context
 # Background service
 keepline daemon start         # Start background monitor
 keepline daemon stop          # Stop daemon
-keepline hooks install        # Install Claude-compatible hooks
+keepline hooks install        # Install Claude Code and Codex lifecycle hooks
 ```
 
 `keepline web` starts the dashboard only. `keepline daemon start` runs the

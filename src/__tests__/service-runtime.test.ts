@@ -209,15 +209,55 @@ describe('service runtime isolation', () => {
     expect((await postStop({
       session_id: 'codex-stop-session',
       cwd: '/tmp/codex-stop',
-    })).status).toBe(409);
+    })).status).toBe(200);
+    expect(sessionRepository.findBySessionId('codex-stop-session')).toMatchObject({
+      client: 'codex',
+      status: 'waiting',
+    });
 
     const response = await postStop({ stop_reason: 'completed' });
 
     expect(response.status).toBe(200);
     expect(sessionRepository.findBySessionId(sessionId)).toMatchObject({
-      status: 'running',
+      status: 'waiting',
     });
     expect(sessionRepository.findBySessionId(sessionId)?.completedAt).toBeUndefined();
+
+    const promptResponse = await fetch(
+      `http://127.0.0.1:${liveService.hookPort}/hook?runtime=claude-code`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          hook_event_name: 'UserPromptSubmit',
+          session_id: sessionId,
+          cwd: '/tmp/service-stop',
+          prompt: 'Continue the task',
+        }),
+      }
+    );
+    expect(promptResponse.status).toBe(200);
+    expect(sessionRepository.findBySessionId(sessionId)?.status).toBe('running');
+
+    const codexStartId = 'codex-hook-start-session';
+    const codexStartResponse = await fetch(
+      `http://127.0.0.1:${liveService.hookPort}/hook?runtime=codex`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          hook_event_name: 'SessionStart',
+          session_id: codexStartId,
+          cwd: '/tmp/codex-hook-start',
+        }),
+      }
+    );
+    expect(codexStartResponse.status).toBe(200);
+    expect(sessionRepository.findBySessionId(codexStartId)).toMatchObject({
+      client: 'codex',
+      status: 'running',
+      directory: '/tmp/codex-hook-start',
+    });
     expect((await postStop({ timestamp: '2026-08-30T10:06:00.000Z' })).status).toBe(200);
     expect(sessionRepository.findBySessionId(sessionId)?.completedAt).toBeUndefined();
 

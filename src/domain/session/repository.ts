@@ -25,6 +25,7 @@ export interface ExistingSessionSummary {
   client: AgentClient;
   status: SessionStatus;
   title: string;
+  lastActiveAt: Date;
 }
 
 /** Session upsert data (for create or update) */

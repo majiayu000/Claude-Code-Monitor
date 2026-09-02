@@ -85,6 +85,23 @@ describe('hook server payload normalization', () => {
     ).toBe(true);
   });
 
+  test('accepts Codex SessionStart payloads', () => {
+    expect(normalizeHookEvent({
+      session_id: 'codex-session-1234',
+      transcript_path: '/tmp/codex-session.jsonl',
+      cwd: '/tmp/project',
+      hook_event_name: 'SessionStart',
+      source: 'startup',
+    }, fixedNow)).toEqual({
+      event_type: 'SessionStart',
+      session_id: 'codex-session-1234',
+      transcript_path: '/tmp/codex-session.jsonl',
+      cwd: '/tmp/project',
+      timestamp: '2026-07-02T15:30:00.000Z',
+      source: 'startup',
+    });
+  });
+
   test('rejects malformed tool payloads', () => {
     expect(
       normalizeHookEvent({
@@ -209,7 +226,7 @@ describe('hook availability status', () => {
     expect(calls).toEqual([{ url: 'http://127.0.0.1:7890', timeoutMs: 50 }]);
   });
 
-  test('does not probe a receiver when neither local server nor daemon is running', async () => {
+  test('discovers a receiver owned by a decoupled service without a daemon pid', async () => {
     let probed = false;
 
     await expect(
@@ -222,9 +239,9 @@ describe('hook availability status', () => {
           return true;
         },
       })
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
 
-    expect(probed).toBe(false);
+    expect(probed).toBe(true);
   });
 
   test('marks installed hooks without a receiver as degraded', () => {

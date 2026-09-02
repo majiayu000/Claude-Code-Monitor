@@ -99,6 +99,7 @@ interface ExistingSessionSummaryRow {
   client: string;
   status: string;
   title: string | null;
+  last_active_at: string;
 }
 
 /** Safely parse the tool_calls JSON column (returns undefined on missing/corrupt data). */
@@ -196,6 +197,7 @@ function rowToExistingSessionSummary(row: ExistingSessionSummaryRow): ExistingSe
     client: row.client === 'codex' ? 'codex' : 'claude',
     status: row.status as SessionStatus,
     title: row.title || '',
+    lastActiveAt: new Date(row.last_active_at),
   };
 }
 
@@ -241,7 +243,7 @@ class SessionRepository implements ISessionRepository {
     const db = getDatabase();
     const placeholders = sessionIds.map(() => '?').join(', ');
     const rows = db
-      .prepare(`SELECT session_id, client, status, title FROM sessions WHERE session_id IN (${placeholders})`)
+      .prepare(`SELECT session_id, client, status, title, last_active_at FROM sessions WHERE session_id IN (${placeholders})`)
       .all(...sessionIds) as ExistingSessionSummaryRow[];
 
     return rows.map(rowToExistingSessionSummary);

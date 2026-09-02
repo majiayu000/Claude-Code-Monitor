@@ -20,6 +20,7 @@ const registeredEvents = [
   'PreToolUse',
   'PostToolUse',
   'Notification',
+  'SessionStart',
   'Stop',
   'UserPromptSubmit',
 ] as const;
@@ -150,7 +151,7 @@ describe('hook installer ownership detection', () => {
         hooks: [expectedHandler],
       },
     ]);
-    for (const event of ['PreToolUse', 'Notification', 'Stop', 'UserPromptSubmit'] as const) {
+    for (const event of ['PreToolUse', 'Notification', 'SessionStart', 'Stop', 'UserPromptSubmit'] as const) {
       expect(matcherBlock(settings.hooks?.[event]?.[0]).hooks[0]).toEqual(expectedHandler);
     }
   });

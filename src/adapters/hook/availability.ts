@@ -52,7 +52,6 @@ export async function isHookReceiverRunning(input: {
   probe?: HookHealthProbe;
 }): Promise<boolean> {
   if (input.localServerRunning) return true;
-  if (!input.daemonRunning) return false;
 
   const timeoutMs = input.timeoutMs ?? 250;
   const probe = input.probe ?? probeHookHealth;

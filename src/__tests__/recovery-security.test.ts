@@ -47,6 +47,7 @@ function createRepository(session: Session | null): ISessionRepository {
         client: session.client,
         status: session.status,
         title: session.title,
+        lastActiveAt: session.lastActiveAt,
       }] : [],
     findAll: () => session ? [session] : [],
     findOperational: () => session ? [session] : [],

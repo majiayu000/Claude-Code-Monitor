@@ -49,7 +49,7 @@ export function registerCommands(program: Command): void {
     .command('daemon <action>')
     .alias('d')
     .description('Manage background daemon (start, stop, restart, status)')
-    .option('--hooks', 'Install/uninstall Claude-compatible hooks with daemon')
+    .option('--hooks', 'Install/uninstall Claude Code and Codex hooks with daemon')
     .action(async (action, options) => (await import('./daemon.js')).daemonCommand(action, options));
 
   // Status
@@ -74,7 +74,7 @@ export function registerCommands(program: Command): void {
   // Hooks management
   program
     .command('hooks <action>')
-    .description('Manage Claude-compatible hooks (install, uninstall, status)')
+    .description('Manage Claude Code and Codex hooks (install, uninstall, status)')
     .action(async (action: string) => {
       const { installHooks, uninstallHooks } = await import('../adapters/hook/installer.js');
       const chalk = (await import('chalk')).default;

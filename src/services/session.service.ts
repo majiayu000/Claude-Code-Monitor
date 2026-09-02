@@ -107,9 +107,15 @@ export class SessionService {
     const existing = this.repository.findBySessionId(sessionId);
     const previousStatus = existing?.status;
 
+    // Explicit completion is durable. Live hooks and later scans may refresh
+    // activity fields, but they cannot reopen a completed session implicitly.
+    const safeInput = existing?.status === 'completed' && input.status !== 'completed'
+      ? { ...input, status: 'completed' as const }
+      : input;
+
     const session = this.repository.upsert({
       sessionId,
-      ...input,
+      ...safeInput,
     });
 
     if (previousStatus && previousStatus !== session.status) {
@@ -218,9 +224,23 @@ export class SessionService {
           process || null,
           agentSession.lastActiveAt
         );
+        // A lifecycle hook is received after the transcript record that caused it.
+        // Keep that newer semantic observation while its process is still alive;
+        // otherwise the CPU/time heuristic would immediately overwrite it.
+        const hasNewerHookObservation = Boolean(
+          existing &&
+          process &&
+          (existing.status === 'running' || existing.status === 'waiting') &&
+          existing.lastActiveAt.getTime() > agentSession.lastActiveAt.getTime()
+        );
         // `completed` is written only by an explicit hook/user action. A later
         // process scan must not downgrade that durable signal to lost/idle.
-        const status = existing?.status === 'completed' ? 'completed' : detectedStatus;
+        const status = existing?.status === 'completed'
+          ? 'completed'
+          : hasNewerHookObservation ? existing!.status : detectedStatus;
+        const lastActiveAt = hasNewerHookObservation
+          ? existing!.lastActiveAt
+          : agentSession.lastActiveAt;
 
         if (existing) {
           const nextStatus = existing.status === 'completed' ? 'completed' : status;
@@ -247,7 +267,7 @@ export class SessionService {
               : undefined,
             currentFile: agentSession.currentFile,
             lastMessage: agentSession.lastMessage,
-            lastActiveAt: agentSession.lastActiveAt,
+            lastActiveAt,
             pid: process?.pid,
             tty: process?.tty,
             toolCount: agentSession.toolCount,

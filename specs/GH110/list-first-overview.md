@@ -20,16 +20,21 @@ projection and is never stored:
 | `completed` | `finished` | Keepline received an explicit durable completion signal. |
 | `idle` | `paused` | The process is alive but currently quiet. |
 
-Runtime transitions:
+Runtime transitions and evidence:
 
-- `running`, `waiting`, and `idle` may move between one another as process
-  activity changes.
+- Claude Code and Codex lifecycle hooks are the primary live signal:
+  `SessionStart`, `UserPromptSubmit`, `PreToolUse`, and `PostToolUse` mean
+  `running`; `Stop` means the response turn ended and maps to `waiting`.
+- A newer hook observation stays authoritative while its matched process is
+  alive. Transcript activity and the existing process/CPU detector remain the
+  fallback when no newer hook observation exists.
 - Any live state moves to `lost` when reconciliation can no longer match its
   process.
 - `lost` moves back to a live state after a successful recovery and process
   reconciliation.
 - Any non-completed state moves to `completed` only from an explicit hook or
   user action. `completed` is durable and process scans cannot downgrade it.
+- `Stop` never means `completed`.
 
 Runtime adapters may improve the input fact, but Herdr and Remem are optional.
 After a restart, Keepline reloads persisted sessions, reconciles live processes,
