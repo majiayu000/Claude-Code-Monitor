@@ -86,7 +86,9 @@ export interface OrchestratorQueueItem {
   score: number
   reasons: OrchestratorReason[]
   recommendedAction: OrchestratorRecommendedAction
+  canRecover: boolean
   processRunning: boolean
+  pid?: number
   context: OrchestratorSessionContext
   intent: OrchestratorIntent
   usageCost?: number

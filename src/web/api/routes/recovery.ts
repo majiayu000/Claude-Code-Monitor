@@ -131,13 +131,20 @@ app.post('/:id/stop', async (c) => {
     return c.json({ success: false, error: 'Session not found' }, 404);
   }
 
-  // For lost sessions, just mark as completed (no process to kill)
-  if (session.status === 'lost' || !session.pid) {
+  // Lost sessions have no live process and can be cleared explicitly.
+  if (session.status === 'lost') {
     completeSession(sessionId);
     return c.json({
       success: true,
       message: 'Session cleared (no process was running)'
     });
+  }
+
+  if (!session.pid) {
+    return c.json({
+      success: false,
+      error: 'Process identity is not available yet; refresh and try again',
+    }, 409);
   }
 
   // Check if process is still running

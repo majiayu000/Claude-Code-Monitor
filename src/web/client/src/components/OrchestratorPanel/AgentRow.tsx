@@ -83,8 +83,10 @@ function RowActions({
   onCopyRecoveryCommand,
   onActionComplete,
 }: AgentRowProps) {
-  const canRecover = item.recommendedAction === 'recover' && onRecover
-  const canStop = (item.status === 'running' || item.status === 'waiting') && onStop
+  const canRecover = item.canRecover && item.recommendedAction === 'recover' && onRecover
+  const canStop = Boolean(item.pid)
+    && (item.status === 'running' || item.status === 'waiting')
+    && onStop
   const canComplete = item.status !== 'completed' && onComplete
   const primaryAction = canRecover
     ? () => runAction(() => onRecover(item.sessionId), onActionComplete)

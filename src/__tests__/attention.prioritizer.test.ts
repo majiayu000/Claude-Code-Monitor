@@ -15,7 +15,7 @@ function session(input: Partial<AggregatedSession> & {
     id: input.sessionId,
     sessionId: input.sessionId,
     client: input.client ?? 'codex',
-    directory: input.directory ?? '/tmp/keepline',
+    directory: input.directory ?? process.cwd(),
     status: input.status,
     title: input.title ?? input.sessionId,
     initialPrompt: input.initialPrompt ?? '',
@@ -216,6 +216,21 @@ describe('buildAttentionOverview', () => {
     expect(overview.items[0].sessionId).toBe('old-lost');
     expect(overview.stats.hiddenOldLost).toBe(0);
     expect(overview.stats.lostWindowHours).toBeUndefined();
+  });
+
+  test('does not recommend recovery when the working directory is unavailable', () => {
+    const overview = buildAttentionOverview([
+      session({
+        sessionId: 'missing-directory',
+        status: 'lost',
+        directory: `/tmp/keepline-missing-${process.pid}`,
+      }),
+    ], { now: NOW });
+
+    expect(overview.items[0]).toMatchObject({
+      canRecover: false,
+      recommendedAction: 'review',
+    });
   });
 
   test('includes compact session context for actionable review cards', () => {

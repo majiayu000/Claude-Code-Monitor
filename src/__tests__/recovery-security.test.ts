@@ -176,6 +176,19 @@ describe('recovery command security', () => {
     });
   });
 
+  test('does not build recovery commands for a missing working directory', () => {
+    const service = new RecoveryService(createRepository(null), () => []);
+    const result = service.canRecover(recoverySession({
+      directory: `/tmp/keepline-missing-${process.pid}`,
+    }));
+
+    expect(result).toEqual({
+      canRecover: false,
+      reason: 'Session directory no longer exists',
+      availableMethods: [],
+    });
+  });
+
   test('marks persisted sessions with unsafe IDs as unrecoverable', () => {
     const service = new RecoveryService(createRepository(recoverySession({
       sessionId: 'safe1234;touch-owned',

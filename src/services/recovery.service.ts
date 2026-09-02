@@ -132,11 +132,19 @@ export class RecoveryService {
       };
     }
 
+    if (!existsSync(session.directory)) {
+      return {
+        canRecover: false,
+        reason: 'Session directory no longer exists',
+        availableMethods: [],
+      };
+    }
+
     if (session.client === 'codex') {
       const sessionFileExists = this.getCodexSessionFiles().some(
         (file) => file.sessionId === session.sessionId
       );
-      if (sessionFileExists && existsSync(session.directory)) {
+      if (sessionFileExists) {
         availableMethods.push('resume');
       }
     } else {
@@ -150,10 +158,8 @@ export class RecoveryService {
     }
 
     // Continue is always available if directory exists
-    if (existsSync(session.directory)) {
-      availableMethods.push('continue');
-      availableMethods.push('new');
-    }
+    availableMethods.push('continue');
+    availableMethods.push('new');
 
     if (availableMethods.length === 0) {
       return {

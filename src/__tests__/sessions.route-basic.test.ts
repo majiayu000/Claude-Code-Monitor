@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import sessions from '../web/api/routes/sessions.js';
+import recovery from '../web/api/routes/recovery.js';
 import { setupUser } from '../services/auth.service.js';
 import { resetDatabase } from '../db/migrations.js';
 import { closeDatabase } from '../infrastructure/database/sqlite.js';
@@ -219,6 +220,37 @@ describe('Basic Sessions Route Contract', () => {
       recommendedMethod: 'continue',
       command: `cd ${directory} && claude --continue`,
     });
+  });
+
+  test('stop rejects a live session until its process identity is known', async () => {
+    sessionRepository.upsert({
+      sessionId: 'stop-without-process-identity',
+      client: 'claude',
+      directory: '/tmp/keepline-stop-without-pid',
+      status: 'running',
+      title: 'Still running',
+      initialPrompt: 'Do not mark this complete',
+      lastActiveAt: new Date(),
+      toolCount: 0,
+      messageCount: 1,
+    });
+
+    const { token } = await setupUser('stop-without-pid-user', 'password123');
+    const response = await recovery.fetch(new Request(
+      'http://localhost/stop-without-process-identity/stop',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: '{}',
+      }
+    ));
+
+    expect(response.status).toBe(409);
+    expect(sessionRepository.findBySessionId('stop-without-process-identity')?.status)
+      .toBe('running');
   });
 
   test('projectRoot filters sessions by resolved git root exactly', async () => {

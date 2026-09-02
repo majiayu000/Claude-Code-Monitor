@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import type { AgentClient, SessionStatus } from '../domain/session/index.js';
 import type { SerializableSessionDigest, SessionDigest } from '../domain/orchestrator/index.js';
 import { serializeSessionDigest } from '../domain/orchestrator/index.js';
@@ -82,7 +83,9 @@ export interface AttentionQueueItem {
   score: number;
   reasons: AttentionReason[];
   recommendedAction: RecommendedAction;
+  canRecover: boolean;
   processRunning: boolean;
+  pid?: number;
   context: AttentionSessionContext;
   intent: AttentionIntent;
   usageCost?: number;
@@ -247,6 +250,8 @@ function buildAttentionItem(
     });
   }
 
+  const canRecover = session.status === 'lost' && existsSync(session.directory);
+
   return {
     rank: 0,
     lane: getAgentBoardLane(session.status),
@@ -258,10 +263,12 @@ function buildAttentionItem(
     lastActiveAt: session.lastActiveAt,
     score: getPriorityScore(reasons),
     reasons,
-    recommendedAction: getRecommendedAction(reasons),
+    recommendedAction: getRecommendedAction(reasons, canRecover),
+    canRecover,
     processRunning: session.processRunning,
+    pid: session.pid,
     context: buildSessionContext(session),
-    intent: buildSessionIntent(session, reasons, options.digest),
+    intent: buildSessionIntent(session, reasons, canRecover, options.digest),
     usageCost,
     digest: options.digest ? serializeSessionDigest(options.digest) : undefined,
   };
@@ -292,9 +299,14 @@ function clampLimit(limit: number | undefined): number {
   return Math.min(Math.floor(limit), MAX_ATTENTION_LIMIT);
 }
 
-function getRecommendedAction(reasons: AttentionReason[]): RecommendedAction {
+function getRecommendedAction(
+  reasons: AttentionReason[],
+  canRecover: boolean
+): RecommendedAction {
   if (reasons.some((reason) => reason.code === 'waiting_for_human')) return 'review';
-  if (reasons.some((reason) => reason.code === 'recoverable_lost')) return 'recover';
+  if (reasons.some((reason) => reason.code === 'recoverable_lost')) {
+    return canRecover ? 'recover' : 'review';
+  }
   if (reasons.some((reason) => reason.code === 'high_cost')) return 'review';
   if (reasons.some((reason) => reason.code === 'stale_activity')) return 'review';
   if (reasons.some((reason) => reason.code === 'idle_activity')) return 'monitor';
@@ -323,6 +335,7 @@ function compactText(value: string | undefined, maxLength: number): string | und
 function buildSessionIntent(
   session: AggregatedSession,
   reasons: AttentionReason[],
+  canRecover: boolean,
   digest?: SessionDigest
 ): AttentionIntent {
   const noiseFlags: AttentionIntentNoiseFlag[] = [];
@@ -373,7 +386,7 @@ function buildSessionIntent(
     task,
     taskSource,
     currentState: firstNonEmpty([lastMessage, digestTask, titleTask]),
-    nextAction: buildNextAction(session, reasons),
+    nextAction: buildNextAction(session, reasons, canRecover),
     whyAttention: buildWhyAttention(reasons),
     confidence,
     noiseFlags: dedupeNoiseFlags(noiseFlags),
@@ -448,8 +461,15 @@ function isLowInformationSentence(sentence: string): boolean {
   return terseFiller || memoryFooter;
 }
 
-function buildNextAction(session: AggregatedSession, reasons: AttentionReason[]): string {
+function buildNextAction(
+  session: AggregatedSession,
+  reasons: AttentionReason[],
+  canRecover: boolean
+): string {
   if (reasons.some((reason) => reason.code === 'recoverable_lost')) {
+    if (!canRecover) {
+      return 'Open details; the original working directory is unavailable.';
+    }
     return session.currentFile
       ? `Recover this session and continue around ${formatPathTail(session.currentFile)}.`
       : 'Recover this session and continue from the current state.';
