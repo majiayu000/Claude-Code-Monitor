@@ -324,6 +324,7 @@ export function uninstallHooks(): void {
 /** Get hook status info */
 export function getHookStatus(): {
   installed: boolean;
+  installation: 'none' | 'partial' | 'all';
   settingsPath: string;
   hookCommand: string;
   targets: Array<{
@@ -339,8 +340,12 @@ export function getHookStatus(): {
     settingsPath: target.settingsPath,
     trustStatus: target.runtimeId === 'codex' ? 'runtime-managed' as const : 'not-required' as const,
   }));
+  const installedCount = targets.filter((target) => target.installed).length;
   return {
-    installed: targets.every((target) => target.installed),
+    installed: installedCount > 0,
+    installation: installedCount === 0
+      ? 'none'
+      : installedCount === targets.length ? 'all' : 'partial',
     settingsPath: targets.map((target) => target.settingsPath).join(', '),
     hookCommand: getHookCommand(),
     targets,

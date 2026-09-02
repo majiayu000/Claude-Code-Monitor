@@ -5,6 +5,7 @@ import { getDaemonStatus } from '../../services/daemon.manager.js';
 
 export interface HookAvailability {
   installed: boolean;
+  installation: 'none' | 'partial' | 'all';
   receiverRunning: boolean;
   degraded: boolean;
   settingsPath: string;
@@ -20,16 +21,19 @@ export interface HookAvailability {
 
 export function buildHookAvailability(input: {
   installed: boolean;
+  installation?: HookAvailability['installation'];
   receiverRunning: boolean;
   settingsPath: string;
   hookCommand: string;
   hookServerUrl: string;
   targets?: HookAvailability['targets'];
 }): HookAvailability {
+  const installation = input.installation ?? (input.installed ? 'all' : 'none');
   return {
     ...input,
+    installation,
     targets: input.targets ?? [],
-    degraded: input.installed && !input.receiverRunning,
+    degraded: installation !== 'none' && !input.receiverRunning,
   };
 }
 
@@ -81,6 +85,7 @@ export async function getHookAvailability(): Promise<HookAvailability> {
   const hookServerUrl = getHookServerUrl();
   return buildHookAvailability({
     installed: status.installed,
+    installation: status.installation,
     receiverRunning: await isHookReceiverRunning({
       localServerRunning: isHookServerRunning(),
       daemonRunning: daemon.running,

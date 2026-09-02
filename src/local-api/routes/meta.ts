@@ -61,9 +61,11 @@ app.get('/meta', (c) => {
           lifecycleHookConfigured
             ? 'session-lifecycle-hook'
             : 'session-lifecycle-hook-unconfigured',
-          lifecycleHookConfigured
-            ? 'agent-completion-claim-hook'
-            : 'agent-completion-claim-hook-unconfigured',
+          descriptor.id === 'claude-code'
+            ? lifecycleHookConfigured
+              ? 'agent-completion-claim-hook'
+              : 'agent-completion-claim-hook-unconfigured'
+            : 'agent-completion-claim-manual-only',
           ...(descriptor.id === 'codex' && lifecycleHookConfigured
             ? ['hook-trust-runtime-managed']
             : []),

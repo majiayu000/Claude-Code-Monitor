@@ -7,6 +7,7 @@ import {
 } from '../adapters/hook/installer.js';
 import type { ClaudeHookMatcher, ClaudeSettings } from '../adapters/hook/types.js';
 import { getCodexHooksPath } from '../lib/paths.js';
+import { buildHookAvailability } from '../adapters/hook/availability.js';
 
 const markedCommand =
   'KEEPLINE_HOOK_MARKER=keepline-hook-v2 curl -fsS -X POST http://127.0.0.1:7890/hook -H "Content-Type: application/json" --data-binary @- > /dev/null 2>&1 || true';
@@ -37,6 +38,21 @@ function matcherBlock(block: unknown): ClaudeHookMatcher {
 }
 
 describe('hook installer ownership detection', () => {
+  test('reports a partial installation without a receiver as degraded', () => {
+    expect(buildHookAvailability({
+      installed: true,
+      installation: 'partial',
+      receiverRunning: false,
+      settingsPath: '/tmp/claude.json, /tmp/codex.json',
+      hookCommand: markedCommand,
+      hookServerUrl: 'http://127.0.0.1:7890',
+    })).toMatchObject({
+      installed: true,
+      installation: 'partial',
+      degraded: true,
+    });
+  });
+
   test('resolves hooks.json from the active CODEX_HOME', () => {
     process.env.CODEX_HOME = '/tmp/custom-codex-home';
 

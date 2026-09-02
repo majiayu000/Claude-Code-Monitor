@@ -174,7 +174,8 @@ describe('service runtime isolation', () => {
     )?.capabilities;
     expect(codexCapabilities).toContain('hooks');
     expect(codexCapabilities).toContain('session-lifecycle-hook-unconfigured');
-    expect(codexCapabilities).toContain('agent-completion-claim-hook-unconfigured');
+    expect(codexCapabilities).toContain('agent-completion-claim-manual-only');
+    expect(codexCapabilities).not.toContain('agent-completion-claim-hook-unconfigured');
 
     const sessionId = 'service-stop-session';
     sessionRepository.upsert({

@@ -52,7 +52,10 @@ export async function statusCommand(): Promise<void> {
   // Hooks
   const hooks = await getHookAvailability();
   console.log(chalk.cyan('Hooks:'));
-  console.log(`  Installed: ${hooks.installed ? chalk.green('Yes') : chalk.yellow('No')}`);
+  const installed = hooks.installation === 'all'
+    ? chalk.green('Yes')
+    : hooks.installation === 'partial' ? chalk.yellow('Partial') : chalk.yellow('No');
+  console.log(`  Installed: ${installed}`);
   console.log(`  Receiver:  ${hooks.receiverRunning ? chalk.green('Running') : chalk.yellow('Not running')}`);
   if (hooks.degraded) {
     console.log(`  Status:    ${chalk.yellow('Degraded - run keepline daemon start to receive hook events')}`);

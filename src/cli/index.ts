@@ -91,7 +91,10 @@ export function registerCommands(program: Command): void {
         case 'status': {
           const { getHookAvailability } = await import('../adapters/hook/availability.js');
           const status = await getHookAvailability();
-          console.log(`Hooks installed: ${status.installed ? chalk.green('Yes') : chalk.red('No')}`);
+          const installed = status.installation === 'all'
+            ? chalk.green('Yes')
+            : status.installation === 'partial' ? chalk.yellow('Partial') : chalk.red('No');
+          console.log(`Hooks installed: ${installed}`);
           console.log(`Hook receiver: ${status.receiverRunning ? chalk.green('Running') : chalk.yellow('Not running')}`);
           if (status.degraded) {
             console.log(chalk.yellow('Hooks are installed but no hook receiver is running. Start keepline daemon to receive hook events.'));
