@@ -16,7 +16,7 @@ interface AgentRowProps {
 
 const STATUS_LABELS: Record<OrchestratorQueueItem['status'], string> = {
   waiting: 'Input needed',
-  lost: 'Recoverable',
+  lost: 'Lost',
   running: 'Working',
   completed: 'Finished',
   idle: 'Paused',
@@ -35,6 +35,9 @@ export function AgentRow({
   const task = formatTask(item)
   const currentState = formatCurrentState(item, task)
   const project = item.project.name
+  const statusLabel = item.status === 'lost' && item.canRecover
+    ? 'Recoverable'
+    : STATUS_LABELS[item.status]
 
   return (
     <article
@@ -46,7 +49,7 @@ export function AgentRow({
       <div className={styles.cardHeader}>
         <span className={styles.statusLabel}>
           <span className={styles.statusDot} aria-hidden="true" />
-          {STATUS_LABELS[item.status]}
+          {statusLabel}
         </span>
         <span className={styles.runtimeMeta}>
           {runtimeLabel}
