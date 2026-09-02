@@ -4,14 +4,18 @@
 
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import type { Session, SessionStatus } from '../domain/session/index.js';
+import {
+  SESSION_STATUS_PRESENTATION,
+  type Session,
+  type SessionStatus,
+} from '../domain/session/index.js';
 
 /** Status display configuration */
 const statusConfig: Record<SessionStatus, { label: string; color: (s: string) => string }> = {
   running: { label: 'Running', color: chalk.green },
   waiting: { label: 'Waiting', color: chalk.yellow },
   idle: { label: 'Idle', color: chalk.blue },
-  lost: { label: 'Lost', color: chalk.red },
+  lost: { label: SESSION_STATUS_PRESENTATION.lost.label, color: chalk.red },
   completed: { label: 'Done', color: chalk.gray },
 };
 

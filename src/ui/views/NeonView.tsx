@@ -8,7 +8,11 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import Gradient from 'ink-gradient';
-import type { Session, SessionStatus } from '../../domain/session/index.js';
+import {
+  SESSION_STATUS_PRESENTATION,
+  type Session,
+  type SessionStatus,
+} from '../../domain/session/index.js';
 
 interface Props {
   sessions: Session[];
@@ -80,7 +84,9 @@ export function NeonView({ sessions, stats }: Props): React.ReactElement {
         <Text color="#666699"> │ </Text>
         <Text color="#00ffff">◈IDLE:{stats.idle}</Text>
         <Text color="#666699"> │ </Text>
-        <Text color="#ff0055">◈DEAD:{stats.lost}</Text>
+        <Text color="#ff0055">
+          ◈{SESSION_STATUS_PRESENTATION.lost.shortLabel}:{stats.lost}
+        </Text>
         <Text color="#333366">{' '.repeat(10)}║</Text>
       </Box>
 

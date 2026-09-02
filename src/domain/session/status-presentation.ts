@@ -16,7 +16,7 @@ export const SESSION_STATUS_PRESENTATION: Record<SessionStatus, SessionStatusPre
   lost: {
     status: 'lost',
     label: 'Interrupted',
-    shortLabel: 'INTERRUPTED',
+    shortLabel: 'INTR',
     icon: '↻',
     order: 3,
   },

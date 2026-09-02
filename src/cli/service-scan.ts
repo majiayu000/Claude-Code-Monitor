@@ -8,11 +8,17 @@ import { reconcileLinkedAgentSessions } from '../services/work-item-session-reco
 
 const SCAN_RESULT_PREFIX = '__KEEPLINE_SERVICE_SCAN__';
 
+interface ServiceScanOptions {
+  full?: boolean;
+}
+
 /** Isolated scan process used by service mode so transcript parsing memory is reclaimed on exit. */
-export async function serviceScanCommand(): Promise<void> {
+export async function serviceScanCommand(options: ServiceScanOptions = {}): Promise<void> {
   runServiceMigrations();
   try {
-    const sync = await syncSessions({ maxAgeDays: 1, includeSubAgents: false });
+    const sync = await syncSessions(options.full
+      ? { fullSync: true, includeSubAgents: true }
+      : { maxAgeDays: 1, includeSubAgents: false });
     const dispatches = taskDispatchService.reconcilePending();
     const linkedSessions = reconcileLinkedAgentSessions();
     console.log(`${SCAN_RESULT_PREFIX}${JSON.stringify({

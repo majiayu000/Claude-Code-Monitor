@@ -5,6 +5,7 @@ import {
   SESSION_STATUSES,
   SESSION_STATUS_PRESENTATION,
 } from '../domain/session/index.js';
+import { formatStatus } from '../lib/format.js';
 import { themes } from '../ui/themes/index.js';
 
 function sortedKeys(value: Record<string, unknown>): string[] {
@@ -14,7 +15,9 @@ function sortedKeys(value: Record<string, unknown>): string[] {
 describe('session status presentation coverage', () => {
   test('presents a stopped recoverable session as interrupted instead of destroyed', () => {
     expect(SESSION_STATUS_PRESENTATION.lost.label).toBe('Interrupted');
-    expect(SESSION_STATUS_PRESENTATION.lost.shortLabel).toBe('INTERRUPTED');
+    expect(SESSION_STATUS_PRESENTATION.lost.shortLabel).toBe('INTR');
+    expect(SESSION_STATUS_PRESENTATION.lost.shortLabel.length).toBeLessThanOrEqual(4);
+    expect(formatStatus('lost')).toContain(SESSION_STATUS_PRESENTATION.lost.label);
   });
 
   test('web status constants use the shared contract', () => {

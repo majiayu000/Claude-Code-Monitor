@@ -20,18 +20,23 @@ state as current.
 
 ## Behavior
 
-1. Before Service Mode accepts requests, convert every persisted
-   `running`/`waiting`/`idle` row to `lost` and clear its PID and TTY.
-2. The existing isolated startup scan then matches native sessions to the
-   current process table and promotes matched sessions back to live states.
-3. Preserve explicit `completed` rows.
-4. Keep the stored domain value `lost` for API compatibility, but present it as
+1. Acquire the Service Mode HTTP and lifecycle listeners before changing shared
+   session state. Until startup reconciliation completes, health, metadata, and
+   local authentication remain available while operational routes return 503.
+2. Convert every persisted `running`/`waiting`/`idle` row to `lost` and clear
+   its PID and TTY.
+3. Run one complete isolated startup scan, including old transcripts and
+   subagents, then promote every live process match back to a live state.
+4. Keep later periodic scans bounded for normal steady-state operation.
+5. Preserve explicit `completed` rows.
+6. Keep the stored domain value `lost` for API compatibility, but present it as
    **Interrupted**: the live process is gone while the durable session record
    remains available for recovery checks.
 
 ## Verification
 
 - A repository test proves invalidation clears only stale live state.
-- A Service Mode test proves stale state is invalidated before the first scan.
+- Service Mode tests prove listener failures preserve live claims, operational
+  routes stay unavailable during reconciliation, and later scans remain bounded.
 - Presentation tests prove the shared label is `Interrupted`.
 - Typecheck, focused tests, and the production build pass.

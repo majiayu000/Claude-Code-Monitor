@@ -32,6 +32,8 @@ export interface KeeplineServiceOptions {
   scanOutputLimitBytes?: number;
   /** Test/support override. Production resolves the isolated scan from the current entrypoint. */
   scanCommand?: string[];
+  /** Test/support override for the first complete reconciliation scan. */
+  initialScanCommand?: string[];
   /** Test/support override. Production resolves recovery through an isolated child process. */
   recoveryCommand?: string[];
 }
@@ -145,12 +147,11 @@ export async function startKeeplineService(
   const recoveryCommand = configuredRecoveryCommand ??
     (entrypoint ? [process.execPath, entrypoint, '_service-recovery'] : []);
   runServiceMigrations();
-  const interruptedSessions = sessionRepository.markActiveSessionsInterrupted();
-  if (interruptedSessions > 0) {
-    logger.info(
-      `Marked ${interruptedSessions} persisted live session(s) interrupted before reconciliation`
-    );
-  }
+  localServiceState.scan.running = false;
+  localServiceState.scan.completed = false;
+  localServiceState.scan.lastStartedAt = undefined;
+  localServiceState.scan.lastCompletedAt = undefined;
+  localServiceState.scan.lastError = undefined;
   const app = createLocalApiApp({
     recoveryRunner: createRecoveryProcessRunner(recoveryCommand),
   });
@@ -161,6 +162,16 @@ export async function startKeeplineService(
     fetch(req, bunServer) {
       if (!isAllowedLoopbackRequestHost(req, bunServer.port ?? port)) {
         return new Response('Forbidden', { status: 403 });
+      }
+      const pathname = new URL(req.url).pathname;
+      if (!localServiceState.scan.completed &&
+          pathname !== '/api/v1/health' &&
+          pathname !== '/api/v1/meta' &&
+          pathname !== '/api/v1/auth/local') {
+        return Response.json(
+          { success: false, error: 'Startup reconciliation is still running' },
+          { status: 503 }
+        );
       }
       return app.fetch(req, { server: bunServer });
     },
@@ -175,6 +186,21 @@ export async function startKeeplineService(
   }
   localServiceState.lifecycleHook.receiverRunning = true;
   localServiceState.lifecycleHook.port = lifecycleReceiver.port;
+  try {
+    const interruptedSessions = sessionRepository.markActiveSessionsInterrupted();
+    if (interruptedSessions > 0) {
+      logger.info(
+        `Marked ${interruptedSessions} persisted live session(s) interrupted before reconciliation`
+      );
+    }
+  } catch (error) {
+    lifecycleReceiver.stop();
+    localServiceState.lifecycleHook.receiverRunning = false;
+    localServiceState.lifecycleHook.port = undefined;
+    server.stop(true);
+    closeDatabase();
+    throw error;
+  }
 
   let stopped = false;
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
@@ -183,11 +209,6 @@ export async function startKeeplineService(
   let nextScanDelayMs = configuredScanInterval;
   let continueCorrelation = false;
   let rescanRequested = false;
-  localServiceState.scan.running = false;
-  localServiceState.scan.completed = false;
-  localServiceState.scan.lastStartedAt = undefined;
-  localServiceState.scan.lastCompletedAt = undefined;
-  localServiceState.scan.lastError = undefined;
   const scan = async () => {
     if (stopped) return;
     if (localServiceState.scan.running) {
@@ -198,10 +219,19 @@ export async function startKeeplineService(
     localServiceState.scan.lastStartedAt = new Date();
     localServiceState.scan.lastError = undefined;
     try {
-      const command = typeof options === 'number' ? undefined : options.scanCommand;
+      const command = typeof options === 'number'
+        ? undefined
+        : localServiceState.scan.completed
+          ? options.scanCommand
+          : (options.initialScanCommand ?? options.scanCommand);
       if (!command && !entrypoint) throw new Error('Unable to resolve Keepline service entrypoint');
       const child = Bun.spawn(
-        command ?? [process.execPath, entrypoint!, '_service-scan'],
+        command ?? [
+          process.execPath,
+          entrypoint!,
+          '_service-scan',
+          ...(localServiceState.scan.completed ? [] : ['--full']),
+        ],
         {
           env: process.env,
           stdout: 'pipe',

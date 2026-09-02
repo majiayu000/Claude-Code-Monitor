@@ -136,7 +136,8 @@ export function registerCommands(program: Command): void {
 
   program
     .command('_service-scan', { hidden: true })
-    .action(async () => (await import('./service-scan.js')).serviceScanCommand());
+    .option('--full')
+    .action(async (options) => (await import('./service-scan.js')).serviceScanCommand(options));
 
   // Memory management (relay race pattern)
   const memoryCmd = program

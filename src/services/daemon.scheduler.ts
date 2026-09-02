@@ -55,12 +55,6 @@ export async function startScheduler(): Promise<void> {
 
   // Initialize database
   runMigrations();
-  const interruptedSessions = sessionRepository.markActiveSessionsInterrupted();
-  if (interruptedSessions > 0) {
-    logger.info(
-      `Marked ${interruptedSessions} persisted live session(s) interrupted before reconciliation`
-    );
-  }
 
   // Initialize pricing before scan cycles. The pricing module falls back to
   // defaults if remote LiteLLM pricing cannot be fetched.
@@ -72,8 +66,27 @@ export async function startScheduler(): Promise<void> {
   // Start hook server
   await startHookServer();
 
-  // Run initial scan
-  await runScanCycle();
+  try {
+    const interruptedSessions = sessionRepository.markActiveSessionsInterrupted();
+    if (interruptedSessions > 0) {
+      logger.info(
+        `Marked ${interruptedSessions} persisted live session(s) interrupted before reconciliation`
+      );
+    }
+
+    // Reconcile every row invalidated above before bounded periodic scans begin.
+    const result = await syncSessions({ fullSync: true, includeSubAgents: true });
+    logger.debug(
+      `Initial scan: ${result.discovered} new, ${result.updated} updated, ${result.lost} lost`
+    );
+  } catch (error) {
+    logger.error('Initial scan failed', error);
+    emit('error', { error: error as Error, context: 'initial_scan' });
+    await stopHookServer();
+    closeDatabase();
+    isRunning = false;
+    throw error;
+  }
 
   // Run initial retention cleanup after sessions are synced.
   await runRetentionCleanupCycle();
