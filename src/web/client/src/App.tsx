@@ -17,7 +17,6 @@ const ProjectStatsBar = lazy(() => import('@/components/ProjectStatsBar').then(m
 const ProjectsGrid = lazy(() => import('@/components/ProjectsGrid').then(m => ({ default: m.ProjectsGrid })))
 const MemoryPanel = lazy(() => import('@/components/MemoryPanel').then(m => ({ default: m.MemoryPanel })))
 const PlansPanel = lazy(() => import('@/components/PlansPanel').then(m => ({ default: m.PlansPanel })))
-const TerminalPanel = lazy(() => import('@/components/TerminalPanel').then(m => ({ default: m.TerminalPanel })))
 const WorkItemsPanel = lazy(() => import('@/components/WorkItemsPanel').then(m => ({ default: m.WorkItemsPanel })))
 const OrchestratorPanel = lazy(() => import('@/components/OrchestratorPanel').then(m => ({ default: m.OrchestratorPanel })))
 
@@ -193,6 +192,7 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
       stats={stats}
       loading={loading}
       onSync={handleSync}
+      onLogout={onLogout}
       syncing={syncing}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
@@ -306,9 +306,6 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
           <PlansPanel />
         )}
 
-        {activeTab === 'terminal' && (
-          <TerminalPanel token={token} onLogout={onLogout} />
-        )}
       </Suspense>
 
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />

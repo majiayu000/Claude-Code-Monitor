@@ -10,6 +10,7 @@ import styles from './Header.module.css'
 
 interface HeaderProps {
   onSync: () => void
+  onLogout?: () => void | Promise<void>
   syncing?: boolean
   sessions?: Session[]
   // Notification props
@@ -23,6 +24,7 @@ interface HeaderProps {
 
 export const Header = memo(function Header({
   onSync,
+  onLogout,
   syncing = false,
   sessions = [],
   notificationSettings,
@@ -35,7 +37,7 @@ export const Header = memo(function Header({
     <header className={styles.header} role="banner">
       <div className={styles.brand}>
         <h1 className={styles.title}>KEEPLINE</h1>
-        <span className={styles.subtitle}>Agent runtime session control center</span>
+        <span className={styles.subtitle}>Agent runtime overview</span>
       </div>
       <div className={styles.actions}>
         <ConnectionStatus status={connectionStatus} />
@@ -57,6 +59,11 @@ export const Header = memo(function Header({
           Sync
         </Button>
         <ThemeSwitcher />
+        {onLogout && (
+          <Button variant="secondary" size="sm" onClick={() => void onLogout()}>
+            Sign out
+          </Button>
+        )}
       </div>
     </header>
   )

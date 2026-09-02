@@ -30,7 +30,6 @@ import {
   status,
 } from './routes/index.js';
 import { broadcast, wsClients, websocketHandler } from './websocket.js';
-import { terminalWebsocketHandler } from './terminal-websocket.js';
 import { verifyToken } from '../../services/auth.service.js';
 import { config } from '../../lib/config.js';
 import { serializeBasicSessions } from './session-response.js';
@@ -39,7 +38,6 @@ import {
   REALTIME_POLL_INTERVAL_MS,
   shouldRunRealtimeFullSync,
 } from './realtime-updates.js';
-import { isAllowedTerminalOrigin } from './terminal-security.js';
 import { isAllowedRequestHost } from './request-security.js';
 import {
   getWebSessionsBasic,
@@ -249,10 +247,10 @@ export async function startWebServer(
 
   logger.info(`Starting web server on port ${port}`);
 
-  const terminalConfig = config.get().webTerminal;
+  const tlsConfig = config.get().webTerminal;
   const hostname = process.env.KEEPLINE_HOST || '127.0.0.1';
 
-  const server = Bun.serve<{ type: 'dashboard' | 'terminal' }>({
+  const server = Bun.serve<{ type: 'dashboard' }>({
     hostname,
     port,
     idleTimeout: 255, // max value, prevents cloudflared/proxy timeout
@@ -277,57 +275,26 @@ export async function startWebServer(
         return new Response('WebSocket upgrade failed', { status: 400 });
       }
 
-      // Handle WebSocket upgrade - terminal
-      if (url.pathname === '/ws/terminal') {
-        const tlsEnabled = Boolean(terminalConfig.tlsCert && terminalConfig.tlsKey);
-        if (!isAllowedTerminalOrigin(req, hostname, port, tlsEnabled)) {
-          logger.warn('Rejected terminal WebSocket with invalid Origin', {
-            origin: req.headers.get('origin') ?? '<missing>',
-            host: url.host,
-          });
-          return new Response('Forbidden', { status: 403 });
-        }
-
-        const upgraded = server.upgrade(req, { data: { type: 'terminal' } });
-        if (upgraded) return undefined;
-        return new Response('WebSocket upgrade failed', { status: 400 });
-      }
-
       // Handle regular HTTP requests via Hono
       return app.fetch(req, { server });
     },
     websocket: {
-      idleTimeout: 0, // disable WS idle timeout for long-lived terminal sessions
+      idleTimeout: 0, // keep long-lived dashboard updates connected
       perMessageDeflate: false, // required for cloudflared compatibility
       open(ws) {
-        const data = (ws as any).data as { type: string } | undefined;
-        if (data?.type === 'terminal') {
-          terminalWebsocketHandler.open(ws);
-        } else {
-          websocketHandler.open(ws);
-        }
+        websocketHandler.open(ws);
       },
       message(ws, message) {
-        const data = (ws as any).data as { type: string } | undefined;
-        if (data?.type === 'terminal') {
-          terminalWebsocketHandler.message(ws, message);
-        } else {
-          websocketHandler.message(ws, message);
-        }
+        websocketHandler.message(ws, message);
       },
       close(ws) {
-        const data = (ws as any).data as { type: string } | undefined;
-        if (data?.type === 'terminal') {
-          terminalWebsocketHandler.close(ws);
-        } else {
-          websocketHandler.close(ws);
-        }
+        websocketHandler.close(ws);
       },
     },
-    ...(terminalConfig.tlsCert && terminalConfig.tlsKey ? {
+    ...(tlsConfig.tlsCert && tlsConfig.tlsKey ? {
       tls: {
-        cert: Bun.file(terminalConfig.tlsCert),
-        key: Bun.file(terminalConfig.tlsKey),
+        cert: Bun.file(tlsConfig.tlsCert),
+        key: Bun.file(tlsConfig.tlsKey),
       },
     } : {}),
   });

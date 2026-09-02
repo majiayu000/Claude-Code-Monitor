@@ -54,7 +54,7 @@ export function AuthSetup({ onSetup, error }: AuthSetupProps) {
             Add this URI to your authenticator app:
           </p>
           <code className={styles.totpUri}>{totpUri}</code>
-          <p className={styles.description}>Setup complete. You can now use the terminal.</p>
+          <p className={styles.description}>Setup complete. You can now use Keepline.</p>
         </div>
       </div>
     )
@@ -63,9 +63,9 @@ export function AuthSetup({ onSetup, error }: AuthSetupProps) {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        <h2 className={styles.title}>Terminal Setup</h2>
+        <h2 className={styles.title}>Keepline Setup</h2>
         <p className={styles.description}>
-          Create your terminal access credentials.
+          Create credentials for your local dashboard.
         </p>
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.field}>

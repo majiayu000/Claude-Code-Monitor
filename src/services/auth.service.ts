@@ -1,5 +1,5 @@
 /**
- * Authentication Service for Web Terminal
+ * Authentication service for the local web dashboard.
  *
  * Handles user management, JWT tokens, and TOTP 2FA.
  */

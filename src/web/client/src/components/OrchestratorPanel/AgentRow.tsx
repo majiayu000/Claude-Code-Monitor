@@ -100,7 +100,7 @@ function RowActions({
           className={`${styles.actionButton} ${styles.primaryAction}`}
           onClick={() => void primaryAction()}
         >
-          {canRecover ? 'Recover' : 'Open'}
+          {canRecover ? 'Continue in terminal' : 'Open'}
         </button>
       )}
       {(onOpenSession || canStop || canComplete || onCopySessionId) && (

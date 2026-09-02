@@ -1,5 +1,5 @@
 /**
- * Auth Routes for Web Terminal
+ * Auth routes for the local web dashboard.
  *
  * Handles setup, login, logout, and status checks.
  */
@@ -24,7 +24,7 @@ import {
   isLoopbackHostHeader,
   isLoopbackOrigin,
 } from '../request-security.js';
-import { isLoopbackHost } from '../terminal-security.js';
+import { isLoopbackHost } from '../web-network.js';
 
 const auth = new Hono();
 const LOGIN_USERNAME_RATE_LIMIT_SCOPE = 'auth-login-username';

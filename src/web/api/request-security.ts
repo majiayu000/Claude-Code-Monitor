@@ -7,7 +7,7 @@ import {
   getLocalInterfaceHosts,
   isLoopbackHost,
   isWildcardBindHost,
-} from './terminal-security.js';
+} from './web-network.js';
 
 export function getAllowedRequestHosts(
   hostname: string,

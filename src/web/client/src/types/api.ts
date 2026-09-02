@@ -5,6 +5,33 @@
 import type { ProjectInfo, ProjectOverviewStats } from './project'
 import type { Session, SessionStats, ToolCallInfo, SubAgent } from './session'
 
+export interface AuthStatus {
+  setupComplete: boolean
+  authenticated: boolean
+  username?: string
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+  totpCode?: string
+}
+
+export interface SetupRequest {
+  username: string
+  password: string
+  enableTotp?: boolean
+}
+
+export interface SetupResponse {
+  token: string
+  totpUri?: string
+}
+
+export interface LoginResponse {
+  token: string
+}
+
 // Base API response
 export interface ApiResponse<T = unknown> {
   success: boolean

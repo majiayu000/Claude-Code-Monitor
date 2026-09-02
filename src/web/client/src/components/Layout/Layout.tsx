@@ -12,6 +12,7 @@ interface LayoutProps {
   stats: SessionStats | null
   loading?: boolean
   onSync: () => void
+  onLogout?: () => void | Promise<void>
   syncing?: boolean
   // Search & Filter props
   searchQuery?: string
@@ -41,6 +42,7 @@ export const Layout = memo(function Layout({
   stats,
   loading,
   onSync,
+  onLogout,
   syncing,
   searchQuery = '',
   onSearchChange,
@@ -65,6 +67,7 @@ export const Layout = memo(function Layout({
     <div className={styles.layout}>
       <Header
         onSync={onSync}
+        onLogout={onLogout}
         syncing={syncing}
         sessions={sessions}
         notificationSettings={notificationSettings}

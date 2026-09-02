@@ -59,6 +59,15 @@ Scores, cost, and stale warnings do not move cards between lanes.
 - Preserve refresh, open, recover, stop, complete, and copy-ID actions.
 - `Open` switches to Sessions, filters to the selected session, and expands its
   full details immediately.
+- A recoverable lost session uses `Continue in terminal` as its primary action.
+  Recovery opens the owning runtime in Warp, iTerm, or Terminal through the
+  existing native-terminal recovery service.
+- The web dashboard does not create, attach, display, or own PTYs. Live agents
+  remain owned by the terminal or supervisor that launched them; Keepline only
+  observes their persisted hook and process state.
+- Do not label a live-session action `Locate` until a runtime integration
+  provides a stable terminal or pane handle. PID and TTY metadata alone are not
+  sufficient to promise exact focus across terminal applications.
 - Preserve the existing API fields while adding the derived board lane.
 - Include completed sessions in the board response. Old lost sessions remain in
   Sessions history instead of flooding the operational board.

@@ -10,7 +10,6 @@ export type TabId =
   | 'projects'
   | 'memory'
   | 'plans'
-  | 'terminal'
 
 interface Tab {
   id: TabId
@@ -29,7 +28,6 @@ const SECONDARY_TABS: Tab[] = [
   { id: 'plans', label: 'Plans', icon: '%' },
   { id: 'memory', label: 'Memory', icon: '@' },
   { id: 'analytics', label: 'Analytics', icon: '$' },
-  { id: 'terminal', label: 'Terminal', icon: '~' },
 ]
 
 interface TabNavProps {
