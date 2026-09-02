@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
+import { SESSION_STATUS_PRESENTATION } from '../../domain/session/index.js';
 
 interface SessionStats {
   total: number;
@@ -50,7 +51,7 @@ export function StatsBar({ stats }: StatsBarProps): React.ReactElement {
           <StatItem label="Running" value={stats.running} color="green" />
           <StatItem label="Waiting" value={stats.waiting} color="yellow" />
           <StatItem label="Idle" value={stats.idle} color="blue" />
-          <StatItem label="Lost" value={stats.lost} color="red" />
+          <StatItem label={SESSION_STATUS_PRESENTATION.lost.label} value={stats.lost} color="red" />
         </Box>
       </Box>
     </Box>

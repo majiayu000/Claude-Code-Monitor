@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { emit } from '../lib/events.js';
+import { resetDatabase } from '../db/migrations.js';
+import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 import { serviceMigrationVersions } from '../local-api/migrations.js';
 import { startKeeplineService, type KeeplineService } from '../services/service-runtime.js';
-import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 import { workItemEvidenceRepository } from '../infrastructure/database/repositories/work-item-evidence.repository.js';
 import { workItemRepository } from '../infrastructure/database/repositories/work-item.repository.js';
 import { getDatabase } from '../infrastructure/database/sqlite.js';
@@ -361,6 +362,113 @@ describe('service runtime isolation', () => {
     await liveService.stop();
     liveService = undefined;
     await expect(fetch(`http://127.0.0.1:${hookPort}/health`)).rejects.toThrow();
+  });
+
+  test('invalidates stale live state before serving the first snapshot', async () => {
+    resetDatabase();
+    sessionRepository.upsert({
+      sessionId: 'restart-service-running',
+      directory: '/tmp/repo',
+      status: 'running',
+      title: 'Stale live session',
+      initialPrompt: 'Prompt',
+      pid: 9876,
+      tty: 'ttys004',
+      lastActiveAt: new Date('2026-04-13T15:00:00.000Z'),
+    });
+
+    liveService = await startKeeplineService({
+      port: 0,
+      hookPort: 0,
+      scanIntervalMs: 0,
+      scanCommand: successfulScanCommand(),
+    });
+
+    const persisted = sessionRepository.findBySessionId('restart-service-running');
+    expect(persisted?.status).toBe('lost');
+    expect(persisted?.pid).toBeUndefined();
+    expect(persisted?.tty).toBeUndefined();
+  });
+
+  test('does not invalidate live claims when a service listener cannot be acquired', async () => {
+    resetDatabase();
+    sessionRepository.upsert({
+      sessionId: 'listener-conflict-running',
+      directory: '/tmp/repo',
+      status: 'running',
+      pid: 4321,
+      tty: 'ttys006',
+    });
+    const occupied = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: () => new Response('occupied'),
+    });
+
+    try {
+      await expect(startKeeplineService({
+        port: 0,
+        hookPort: occupied.port,
+        scanIntervalMs: 0,
+        scanCommand: successfulScanCommand(),
+      })).rejects.toThrow();
+      const persisted = sessionRepository.findBySessionId('listener-conflict-running');
+      expect(persisted?.status).toBe('running');
+      expect(persisted?.pid).toBe(4321);
+      expect(persisted?.tty).toBe('ttys006');
+    } finally {
+      occupied.stop(true);
+    }
+  });
+
+  test('uses a complete first scan and blocks operational routes until it finishes', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'keepline-initial-scan-'));
+    const callsPath = join(directory, 'calls');
+    const payload = JSON.stringify({ runtimeScan: [], pendingDispatches: 0 });
+    const initialScript = `
+      const fs = await import('fs');
+      fs.appendFileSync(${JSON.stringify(callsPath)}, 'I');
+      await Bun.sleep(300);
+      console.log(${JSON.stringify(SCAN_RESULT_PREFIX)} + ${JSON.stringify(payload)});
+    `;
+    const regularScript = `
+      const fs = await import('fs');
+      fs.appendFileSync(${JSON.stringify(callsPath)}, 'R');
+      console.log(${JSON.stringify(SCAN_RESULT_PREFIX)} + ${JSON.stringify(payload)});
+    `;
+    liveService = await startKeeplineService({
+      port: 0,
+      hookPort: 0,
+      scanIntervalMs: 0,
+      initialScanCommand: [process.execPath, '-e', initialScript],
+      scanCommand: [process.execPath, '-e', regularScript],
+    });
+    const baseURL = `http://127.0.0.1:${liveService.server.port}`;
+    await waitUntil(() => existsSync(callsPath));
+
+    const authResponse = await fetch(`${baseURL}/api/v1/auth/local`, { method: 'POST' });
+    const authBody = await authResponse.json() as { data: { token: string } };
+    const headers = { Authorization: `Bearer ${authBody.data.token}` };
+    const blocked = await fetch(`${baseURL}/api/v1/sessions?fields=basic`, { headers });
+    expect(blocked.status).toBe(503);
+    expect(await blocked.json()).toEqual({
+      success: false,
+      error: 'Startup reconciliation is still running',
+    });
+
+    await waitUntil(async () => {
+      const response = await fetch(`${baseURL}/api/v1/health`);
+      const body = await response.json() as { data: { scan: { completed: boolean } } };
+      return body.data.scan.completed;
+    });
+    expect((await fetch(`${baseURL}/api/v1/sessions?fields=basic`, { headers })).status).toBe(200);
+    expect(readFileSync(callsPath, 'utf8')).toBe('I');
+
+    emit('session:turn-ended', {
+      sessionId: 'initial-scan-follow-up',
+      timestamp: new Date('2026-09-02T00:00:00.000Z'),
+    });
+    await waitUntil(() => readFileSync(callsPath, 'utf8') === 'IR');
   });
 
   test('keeps the static service graph free of heavy app-only modules', async () => {

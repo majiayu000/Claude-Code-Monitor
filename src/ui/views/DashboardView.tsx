@@ -7,7 +7,11 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { Session, SessionStatus } from '../../domain/session/index.js';
+import {
+  SESSION_STATUS_PRESENTATION,
+  type Session,
+  type SessionStatus,
+} from '../../domain/session/index.js';
 
 interface Props {
   sessions: Session[];
@@ -85,7 +89,11 @@ export function DashboardView({ sessions, stats }: Props): React.ReactElement {
         <StatBox label="run" value={stats.running} color="#9ece6a" />
         <StatBox label="wait" value={stats.waiting} color="#ff9e64" />
         <StatBox label="idle" value={stats.idle} color="#7dcfff" />
-        <StatBox label="lost" value={stats.lost} color="#f7768e" />
+        <StatBox
+          label={SESSION_STATUS_PRESENTATION.lost.label.toLowerCase()}
+          value={stats.lost}
+          color="#f7768e"
+        />
       </Box>
 
       {/* Active Sessions Box */}
@@ -132,7 +140,9 @@ export function DashboardView({ sessions, stats }: Props): React.ReactElement {
       {lost.length > 0 && (
         <Box flexDirection="column" borderStyle="round" borderColor="#f7768e" marginBottom={1}>
           <Box paddingX={1}>
-            <Text color="#f7768e" bold>▌LOST ({lost.length})</Text>
+            <Text color="#f7768e" bold>
+              ▌{SESSION_STATUS_PRESENTATION.lost.shortLabel} ({lost.length})
+            </Text>
             <Text color="#565f89"> — can be recovered</Text>
           </Box>
           {lost.slice(0, 5).map((session, idx) => (

@@ -87,6 +87,9 @@ export interface ISessionRepository {
   /** Find active sessions with only the fields needed for process reconciliation */
   findActiveLightweight(): ActiveSessionRecord[];
 
+  /** Clear persisted live claims before a fresh process reconciliation. */
+  markActiveSessionsInterrupted(observedAt?: Date): number;
+
   /** Find sessions by status */
   findByStatus(status: SessionStatus): Session[];
 

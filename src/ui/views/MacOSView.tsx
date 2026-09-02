@@ -8,7 +8,11 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import type { Session, SessionStatus } from '../../domain/session/index.js';
+import {
+  SESSION_STATUS_PRESENTATION,
+  type Session,
+  type SessionStatus,
+} from '../../domain/session/index.js';
 
 interface Props {
   sessions: Session[];
@@ -88,7 +92,7 @@ export function MacOSView({ sessions, stats }: Props): React.ReactElement {
         <Text color="#c7c7cc">│</Text>
         <Pill label="  Active" value={stats.running + stats.waiting} color="#34c759" />
         <Pill label="Idle" value={stats.idle} color="#007aff" />
-        <Pill label="Lost" value={stats.lost} color="#ff3b30" />
+        <Pill label={SESSION_STATUS_PRESENTATION.lost.label} value={stats.lost} color="#ff3b30" />
       </Box>
 
       {/* Active Sessions */}

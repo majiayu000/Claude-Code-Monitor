@@ -361,6 +361,17 @@ class SessionRepository implements ISessionRepository {
     return rows.map(rowToActiveSessionRecord);
   }
 
+  markActiveSessionsInterrupted(observedAt: Date = new Date()): number {
+    const db = getDatabase();
+    const result = db.prepare(`
+      UPDATE sessions
+      SET status = 'lost', pid = NULL, tty = NULL, updated_at = ?
+      WHERE status IN ('running', 'waiting', 'idle')
+    `).run(observedAt.toISOString());
+
+    return result.changes;
+  }
+
   findByStatus(status: SessionStatus): Session[] {
     const db = getDatabase();
     const rows = db

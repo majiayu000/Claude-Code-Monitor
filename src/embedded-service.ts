@@ -61,13 +61,16 @@ logger.configure({
 
 const args = commandArguments();
 if (args[0] === '_service-scan') {
-  if (args.length !== 1) throw new Error('_service-scan does not accept arguments');
-  await serviceScanCommand();
+  if (args.length > 2 || (args.length === 2 && args[1] !== '--full')) {
+    throw new Error('_service-scan accepts only --full');
+  }
+  await serviceScanCommand({ full: args[1] === '--full' });
 } else if (args[0] === '_service-recovery') {
   await serviceRecoveryCommand(args.slice(1));
 } else {
   await serviceCommand(parseServiceOptions(args), {
     scanCommand: [process.execPath, '_service-scan'],
+    initialScanCommand: [process.execPath, '_service-scan', '--full'],
     recoveryCommand: [process.execPath, '_service-recovery'],
   });
 }

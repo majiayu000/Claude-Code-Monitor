@@ -124,7 +124,9 @@ function Stats({ stats }: { stats: Props['stats'] }): React.ReactElement {
       <Text color={C.dim}>  </Text>
       <Text color={C.cyan}>●</Text><Text color={C.text}> IDLE:</Text><Text color="#fff" bold>{stats.idle}</Text>
       <Text color={C.dim}>  </Text>
-      <Text color={C.red}>●</Text><Text color={C.text}> DEAD:</Text><Text color="#fff" bold>{stats.lost}</Text>
+      <Text color={C.red}>●</Text>
+      <Text color={C.text}> {SESSION_STATUS_PRESENTATION.lost.shortLabel}:</Text>
+      <Text color="#fff" bold>{stats.lost}</Text>
     </Box>
   );
 }
