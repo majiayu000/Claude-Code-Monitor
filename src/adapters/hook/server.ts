@@ -14,13 +14,15 @@ import {
   isLoopbackHostHeader,
   isLoopbackOrigin,
 } from '../../web/api/request-security.js';
-import { updateSession } from '../../services/session.service.js';
+import { createSession, getSession, updateSession } from '../../services/session.service.js';
 import {
   getCompressionQueue,
   startCompressionQueue,
   stopCompressionQueue,
 } from '../../services/compression.queue.js';
 import { generateSessionContext } from '../../services/context.injection.js';
+import { generateTitle, isGeneratedSessionTitle } from '../../domain/session/index.js';
+import { scopeCodexSessionId } from '../codex/parser.js';
 import type {
   HookEvent,
   ToolUseHookEvent,
@@ -35,6 +37,7 @@ const VALID_EVENT_TYPES: Set<HookEventType> = new Set([
   'PreToolUse',
   'PostToolUse',
   'Notification',
+  'SessionStart',
   'Stop',
   'UserPromptSubmit',
 ]);
@@ -108,6 +111,14 @@ function normalizeKnownHookEvent(
       ...base,
       event_type: 'Notification',
       message: event.message,
+    };
+  }
+
+  if (eventType === 'SessionStart') {
+    return {
+      ...base,
+      event_type: 'SessionStart',
+      source: typeof event.source === 'string' ? event.source : undefined,
     };
   }
 
@@ -203,17 +214,44 @@ export function isValidHookEvent(event: unknown): event is HookEvent {
 }
 
 /** Handle incoming hook event */
-async function handleHookEvent(event: HookEvent): Promise<void> {
-  logger.debug('Hook event received', { type: event.event_type, session: event.session_id });
+async function handleHookEvent(
+  event: HookEvent,
+  runtimeHint: 'claude' | 'codex' = 'claude'
+): Promise<void> {
+  const sessionId = runtimeHint === 'codex'
+    ? scopeCodexSessionId(event.session_id)
+    : event.session_id;
+  logger.debug('Hook event received', { type: event.event_type, session: sessionId });
+
+  const ensureSession = (initialPrompt: string) => {
+    const existing = getSession(sessionId);
+    if (existing) {
+      if (initialPrompt !== 'Unknown task' && isGeneratedSessionTitle(existing.title)) {
+        return updateSession(sessionId, {
+          title: generateTitle(initialPrompt),
+          initialPrompt,
+        });
+      }
+      return existing;
+    }
+    return createSession({
+      sessionId,
+      client: runtimeHint,
+      directory: event.cwd,
+      initialPrompt,
+      statusSource: 'hook',
+    });
+  };
 
   switch (event.event_type) {
     case 'PreToolUse':
     case 'PostToolUse': {
       const toolEvent = event as ToolUseHookEvent;
+      ensureSession('Unknown task');
 
       // Emit tool event
       emit(event.event_type === 'PreToolUse' ? 'tool:pre' : 'tool:post', {
-        sessionId: toolEvent.session_id,
+        sessionId,
         tool: toolEvent.tool_name,
         input: toolEvent.tool_input,
         output: toolEvent.tool_output,
@@ -221,11 +259,12 @@ async function handleHookEvent(event: HookEvent): Promise<void> {
       });
 
       // Update session with tool info
-      updateSession(toolEvent.session_id, {
+      updateSession(sessionId, {
         lastTool: toolEvent.tool_name,
         lastToolInput: JSON.stringify(toolEvent.tool_input),
         lastActiveAt: new Date(toolEvent.timestamp),
         status: 'running',
+        statusSource: 'hook',
       });
 
       // Extract current file if applicable
@@ -233,7 +272,7 @@ async function handleHookEvent(event: HookEvent): Promise<void> {
       for (const key of fileKeys) {
         const value = toolEvent.tool_input[key];
         if (typeof value === 'string') {
-          updateSession(toolEvent.session_id, { currentFile: value });
+          updateSession(sessionId, { currentFile: value });
           break;
         }
       }
@@ -246,7 +285,7 @@ async function handleHookEvent(event: HookEvent): Promise<void> {
             toolName: toolEvent.tool_name,
             toolInput: toolEvent.tool_input,
             toolOutput: toolEvent.tool_output,
-            sessionId: toolEvent.session_id,
+            sessionId,
           });
         }
       }
@@ -255,17 +294,28 @@ async function handleHookEvent(event: HookEvent): Promise<void> {
 
     case 'Notification':
       // Just log notifications for now
-      logger.info(`Notification from ${event.session_id}: ${(event as { message: string }).message}`);
+      logger.info(`Notification from ${sessionId}: ${(event as { message: string }).message}`);
+      break;
+
+    case 'SessionStart':
+      ensureSession('Unknown task');
+      updateSession(sessionId, {
+        status: 'running',
+        statusSource: 'hook',
+        lastActiveAt: new Date(event.timestamp),
+      });
       break;
 
     case 'Stop':
       // Claude finished one response turn. This is not evidence that the task completed.
-      updateSession(event.session_id, {
+      updateSession(sessionId, {
+        status: 'waiting',
+        statusSource: 'hook',
         lastActiveAt: new Date(event.timestamp),
       });
-      sessionFirstPrompts.delete(event.session_id);
+      sessionFirstPrompts.delete(sessionId);
       emit('session:turn-ended', {
-        sessionId: event.session_id,
+        sessionId,
         timestamp: new Date(event.timestamp),
         reason: (event as { reason?: string }).reason,
       });
@@ -273,18 +323,24 @@ async function handleHookEvent(event: HookEvent): Promise<void> {
 
     case 'UserPromptSubmit': {
       const promptEvent = event as UserPromptSubmitHookEvent;
+      ensureSession(promptEvent.prompt);
+      updateSession(sessionId, {
+        status: 'running',
+        statusSource: 'hook',
+        lastActiveAt: new Date(event.timestamp),
+      });
 
       // Check if this is the first prompt for this session
-      const isFirstPrompt = !sessionFirstPrompts.has(event.session_id);
+      const isFirstPrompt = !sessionFirstPrompts.has(sessionId);
       if (isFirstPrompt) {
-        sessionFirstPrompts.set(event.session_id, true);
+        sessionFirstPrompts.set(sessionId, true);
 
         // Generate and log context for first prompt (async, don't block)
         generateSessionContext(event.cwd, promptEvent.prompt)
           .then((context) => {
             if (context.observations.length > 0) {
               logger.info(
-                `Context injection available for ${event.session_id}: ` +
+                `Context injection available for ${sessionId}: ` +
                 `${context.observations.length} observations, ${context.totalTokens} tokens`
               );
               // Note: Actual injection into CLAUDE.md would require file system access
@@ -297,15 +353,6 @@ async function handleHookEvent(event: HookEvent): Promise<void> {
           });
       }
 
-      // Emit prompt event
-      emit('session:updated', {
-        session: {
-          id: event.session_id,
-          directory: event.cwd,
-          startedAt: new Date(event.timestamp),
-          status: 'running',
-        } as import('../../domain/session/entity.js').Session,
-      });
       break;
     }
   }
@@ -334,6 +381,7 @@ export function createHookServer(): FastifyInstance {
     const queue = getCompressionQueue();
     return {
       status: 'ok',
+      service: 'keepline-hook-receiver',
       compression: {
         active: queue.isActive(),
         stats: queue.getStats(),
@@ -358,7 +406,12 @@ export function createHookServer(): FastifyInstance {
         return { success: false, error: 'Invalid hook event payload' };
       }
 
-      await handleHookEvent(event);
+      const runtime = new URL(request.url, 'http://127.0.0.1').searchParams.get('runtime');
+      if (runtime !== null && runtime !== 'claude-code' && runtime !== 'codex') {
+        reply.status(400);
+        return { success: false, error: 'Invalid hook runtime' };
+      }
+      await handleHookEvent(event, runtime === 'codex' ? 'codex' : 'claude');
       return { success: true };
     } catch (error) {
       logger.error('Failed to handle hook event', error);

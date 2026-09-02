@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import sessions from '../web/api/routes/sessions.js';
+import recovery from '../web/api/routes/recovery.js';
 import { setupUser } from '../services/auth.service.js';
 import { resetDatabase } from '../db/migrations.js';
 import { closeDatabase } from '../infrastructure/database/sqlite.js';
@@ -176,6 +177,80 @@ describe('Basic Sessions Route Contract', () => {
       client: 'codex',
       runtimeId: 'codex',
     });
+  });
+
+  test('single session route includes a complete recovery command', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'keepline-recovery-command-'));
+    tmpRoots.push(directory);
+
+    sessionRepository.upsert({
+      sessionId: 'copy-recovery-command-session',
+      client: 'claude',
+      directory,
+      status: 'lost',
+      title: 'Copy recovery command',
+      initialPrompt: 'Recover from the original working directory',
+      lastActiveAt: new Date('2026-04-13T10:00:05.000Z'),
+      toolCount: 0,
+      messageCount: 1,
+    });
+
+    const { token } = await setupUser('recovery-command-route-user', 'password123');
+    const response = await sessions.fetch(new Request(
+      'http://localhost/copy-recovery-command-session',
+      { headers: { Authorization: `Bearer ${token}` } }
+    ));
+
+    expect(response.status).toBe(200);
+
+    const body = await response.json() as {
+      success: boolean;
+      data: {
+        recovery: {
+          canRecover: boolean;
+          recommendedMethod?: string;
+          command?: string;
+        };
+      };
+    };
+
+    expect(body.success).toBe(true);
+    expect(body.data.recovery).toMatchObject({
+      canRecover: true,
+      recommendedMethod: 'continue',
+      command: `cd ${directory} && claude --continue`,
+    });
+  });
+
+  test('stop rejects a live session until its process identity is known', async () => {
+    sessionRepository.upsert({
+      sessionId: 'stop-without-process-identity',
+      client: 'claude',
+      directory: '/tmp/keepline-stop-without-pid',
+      status: 'running',
+      title: 'Still running',
+      initialPrompt: 'Do not mark this complete',
+      lastActiveAt: new Date(),
+      toolCount: 0,
+      messageCount: 1,
+    });
+
+    const { token } = await setupUser('stop-without-pid-user', 'password123');
+    const response = await recovery.fetch(new Request(
+      'http://localhost/stop-without-process-identity/stop',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: '{}',
+      }
+    ));
+
+    expect(response.status).toBe(409);
+    expect(sessionRepository.findBySessionId('stop-without-process-identity')?.status)
+      .toBe('running');
   });
 
   test('projectRoot filters sessions by resolved git root exactly', async () => {

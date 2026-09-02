@@ -10,6 +10,7 @@ import { AuthLogin } from '@/components/AuthLogin'
 import type { TabId } from '@/components/TabNav'
 import type { ProjectInfo, RuntimeFilter, SessionStatus } from '@/types'
 import { useAuth, useSessions, useKeyboardShortcuts, useNotifications, useProjects } from '@/hooks'
+import { fetchSession } from '@/services/api'
 
 const SessionList = lazy(() => import('@/components/SessionList').then(m => ({ default: m.SessionList })))
 const UsagePanel = lazy(() => import('@/components/UsagePanel').then(m => ({ default: m.UsagePanel })))
@@ -17,7 +18,6 @@ const ProjectStatsBar = lazy(() => import('@/components/ProjectStatsBar').then(m
 const ProjectsGrid = lazy(() => import('@/components/ProjectsGrid').then(m => ({ default: m.ProjectsGrid })))
 const MemoryPanel = lazy(() => import('@/components/MemoryPanel').then(m => ({ default: m.MemoryPanel })))
 const PlansPanel = lazy(() => import('@/components/PlansPanel').then(m => ({ default: m.PlansPanel })))
-const TerminalPanel = lazy(() => import('@/components/TerminalPanel').then(m => ({ default: m.TerminalPanel })))
 const WorkItemsPanel = lazy(() => import('@/components/WorkItemsPanel').then(m => ({ default: m.WorkItemsPanel })))
 const OrchestratorPanel = lazy(() => import('@/components/OrchestratorPanel').then(m => ({ default: m.OrchestratorPanel })))
 
@@ -37,6 +37,7 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilters, setStatusFilters] = useState<Set<SessionStatus>>(new Set())
   const [runtimeFilter, setRuntimeFilter] = useState<RuntimeFilter>('all')
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null)
 
   const {
     sessions,
@@ -162,15 +163,27 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
     setStatusFilters(new Set())
     setRuntimeFilter('all')
     setSearchQuery(sessionId)
+    setExpandedSessionId(sessionId)
     setActiveTab('sessions')
   }, [])
 
-  const handleCopySessionId = useCallback(async (sessionId: string) => {
+  const handleInitialExpansionConsumed = useCallback(() => {
+    setExpandedSessionId(null)
+  }, [])
+
+  const handleCopyRecoveryCommand = useCallback(async (sessionId: string) => {
     try {
-      await navigator.clipboard.writeText(sessionId)
-      showToast('Session ID copied', 'success')
+      const response = await fetchSession(sessionId)
+      const command = response.data?.recovery.command
+      if (!response.success || !command) {
+        showToast(response.error || 'Recovery command is not available', 'error')
+        return
+      }
+
+      await navigator.clipboard.writeText(command)
+      showToast('Recovery command copied', 'success')
     } catch {
-      showToast('Failed to copy session ID', 'error')
+      showToast('Failed to copy recovery command', 'error')
     }
   }, [showToast])
 
@@ -187,6 +200,7 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
       stats={stats}
       loading={loading}
       onSync={handleSync}
+      onLogout={onLogout}
       syncing={syncing}
       searchQuery={searchQuery}
       onSearchChange={setSearchQuery}
@@ -248,6 +262,8 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
               hasActiveFilters={hasActiveFilters}
               totalCount={totalSessionCount}
               globalMatchCount={matchedSessionCount}
+              initiallyExpandedSessionId={expandedSessionId ?? undefined}
+              onInitialExpansionConsumed={handleInitialExpansionConsumed}
             />
           </>
         )}
@@ -263,7 +279,7 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
             onRecover={handleRecover}
             onStop={handleStop}
             onComplete={handleComplete}
-            onCopySessionId={handleCopySessionId}
+            onCopyRecoveryCommand={handleCopyRecoveryCommand}
           />
         )}
 
@@ -298,9 +314,6 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
           <PlansPanel />
         )}
 
-        {activeTab === 'terminal' && (
-          <TerminalPanel token={token} onLogout={onLogout} />
-        )}
       </Suspense>
 
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />

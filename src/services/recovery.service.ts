@@ -11,7 +11,7 @@ import { emit } from '../lib/events.js';
 import { getProjectFolder } from '../lib/paths.js';
 import { logger } from '../lib/logger.js';
 import { isValidSessionId, assertValidSessionId } from '../lib/session-id.js';
-import { renderShellCommand } from '../lib/shell-quote.js';
+import { renderShellCommand, shellQuote } from '../lib/shell-quote.js';
 import { unscopeCodexSessionId } from '../adapters/codex/parser.js';
 import { scanCodexSessionsDirectory } from '../adapters/codex/scanner.js';
 import { openTerminalWithCommand, printRecoveryCommand } from './terminal.js';
@@ -101,6 +101,15 @@ export function buildRecoveryCommand(
   return renderShellCommand(args);
 }
 
+/** Build one paste-ready shell command that restores the session from its cwd. */
+export function buildRecoveryShellCommand(
+  session: Session,
+  method: RecoveryMethod,
+  skipPermissions = false
+): string {
+  return `cd ${shellQuote(session.directory)} && ${buildRecoveryCommand(session, method, skipPermissions)}`;
+}
+
 export class RecoveryService {
   constructor(
     private readonly repository: ISessionRepository,
@@ -123,11 +132,19 @@ export class RecoveryService {
       };
     }
 
+    if (!existsSync(session.directory)) {
+      return {
+        canRecover: false,
+        reason: 'Session directory no longer exists',
+        availableMethods: [],
+      };
+    }
+
     if (session.client === 'codex') {
       const sessionFileExists = this.getCodexSessionFiles().some(
         (file) => file.sessionId === session.sessionId
       );
-      if (sessionFileExists && existsSync(session.directory)) {
+      if (sessionFileExists) {
         availableMethods.push('resume');
       }
     } else {
@@ -141,10 +158,8 @@ export class RecoveryService {
     }
 
     // Continue is always available if directory exists
-    if (existsSync(session.directory)) {
-      availableMethods.push('continue');
-      availableMethods.push('new');
-    }
+    availableMethods.push('continue');
+    availableMethods.push('new');
 
     if (availableMethods.length === 0) {
       return {
@@ -220,6 +235,7 @@ export class RecoveryService {
         this.repository.upsert({
           sessionId: options.sessionId,
           status: 'running',
+          statusSource: 'user',
         });
 
         emit('session:recovered', { session: this.repository.findBySessionId(options.sessionId)! });
@@ -291,7 +307,7 @@ export class RecoveryService {
     }
 
     const recommendedMethod = this.getRecommendedMethod(session);
-    const command = buildRecoveryCommand(session, recommendedMethod);
+    const command = buildRecoveryShellCommand(session, recommendedMethod);
 
     return {
       session,

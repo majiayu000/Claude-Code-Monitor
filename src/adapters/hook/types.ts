@@ -2,11 +2,12 @@
  * Hook module types
  */
 
-/** Hook event types from Claude Code that Keepline consumes */
+/** Lifecycle hook event types from Claude Code and Codex that Keepline consumes. */
 export type HookEventType =
   | 'PreToolUse'
   | 'PostToolUse'
   | 'Notification'
+  | 'SessionStart'
   | 'Stop'
   | 'UserPromptSubmit';
 
@@ -39,6 +40,12 @@ export interface NotificationHookEvent extends HookEventPayload {
   message: string;
 }
 
+/** Session start hook event */
+export interface SessionStartHookEvent extends HookEventPayload {
+  event_type: 'SessionStart';
+  source?: string;
+}
+
 /** Stop hook event */
 export interface StopHookEvent extends HookEventPayload {
   event_type: 'Stop';
@@ -55,6 +62,7 @@ export interface UserPromptSubmitHookEvent extends HookEventPayload {
 export type HookEvent =
   | ToolUseHookEvent
   | NotificationHookEvent
+  | SessionStartHookEvent
   | StopHookEvent
   | UserPromptSubmitHookEvent;
 
@@ -79,7 +87,7 @@ export interface ClaudeHookMatcherGroup {
 export type ClaudeHookMatcher = ClaudeHookMatcherGroup;
 export type ClaudeHookConfig = ClaudeHookCommandHandler | ClaudeHookMatcherGroup;
 
-/** Claude settings structure */
+/** Shared JSON hook settings shape used by Claude Code and Codex. */
 export interface ClaudeSettings {
   hooks?: Partial<Record<HookEventType, ClaudeHookConfig[]>>;
   [key: string]: unknown;

@@ -1,5 +1,5 @@
 /**
- * useAuth - Authentication state management for web terminal
+ * useAuth - Authentication state management for the local dashboard
  */
 
 import { useState, useCallback, useEffect } from 'react'

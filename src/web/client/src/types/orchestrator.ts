@@ -10,6 +10,7 @@ export type OrchestratorReasonCode =
 
 export type OrchestratorSeverity = 'critical' | 'warning' | 'info'
 export type OrchestratorRecommendedAction = 'review' | 'recover' | 'monitor' | 'none'
+export type AgentBoardLane = 'needs_you' | 'working' | 'finished' | 'paused'
 export type OrchestratorDigestSource = 'deterministic' | 'local_model'
 export type OrchestratorDigestStatus = 'fresh' | 'stale' | 'error'
 
@@ -75,16 +76,26 @@ export interface OrchestratorDigest {
 
 export interface OrchestratorQueueItem {
   rank: number
+  lane: AgentBoardLane
   sessionId: string
   client: AgentClient
   status: SessionStatus
   title: string
   directory: string
+  project: {
+    id: string
+    rootPath: string
+    name: string
+    displayPath: string
+    source: 'git-root' | 'cwd' | 'unknown'
+  }
   lastActiveAt: string
   score: number
   reasons: OrchestratorReason[]
   recommendedAction: OrchestratorRecommendedAction
+  canRecover: boolean
   processRunning: boolean
+  pid?: number
   context: OrchestratorSessionContext
   intent: OrchestratorIntent
   usageCost?: number

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import {
   hasCurrentLifecycleHook,
   installKeeplineHookConfig,
@@ -6,6 +6,8 @@ import {
   uninstallKeeplineHookConfig,
 } from '../adapters/hook/installer.js';
 import type { ClaudeHookMatcher, ClaudeSettings } from '../adapters/hook/types.js';
+import { getCodexHooksPath } from '../lib/paths.js';
+import { buildHookAvailability } from '../adapters/hook/availability.js';
 
 const markedCommand =
   'KEEPLINE_HOOK_MARKER=keepline-hook-v2 curl -fsS -X POST http://127.0.0.1:7890/hook -H "Content-Type: application/json" --data-binary @- > /dev/null 2>&1 || true';
@@ -20,15 +22,43 @@ const registeredEvents = [
   'PreToolUse',
   'PostToolUse',
   'Notification',
+  'SessionStart',
   'Stop',
   'UserPromptSubmit',
 ] as const;
+const originalCodexHome = process.env.CODEX_HOME;
+
+afterEach(() => {
+  if (originalCodexHome === undefined) delete process.env.CODEX_HOME;
+  else process.env.CODEX_HOME = originalCodexHome;
+});
 
 function matcherBlock(block: unknown): ClaudeHookMatcher {
   return block as ClaudeHookMatcher;
 }
 
 describe('hook installer ownership detection', () => {
+  test('reports a partial installation without a receiver as degraded', () => {
+    expect(buildHookAvailability({
+      installed: true,
+      installation: 'partial',
+      receiverRunning: false,
+      settingsPath: '/tmp/claude.json, /tmp/codex.json',
+      hookCommand: markedCommand,
+      hookServerUrl: 'http://127.0.0.1:7890',
+    })).toMatchObject({
+      installed: true,
+      installation: 'partial',
+      degraded: true,
+    });
+  });
+
+  test('resolves hooks.json from the active CODEX_HOME', () => {
+    process.env.CODEX_HOME = '/tmp/custom-codex-home';
+
+    expect(getCodexHooksPath()).toBe('/tmp/custom-codex-home/hooks.json');
+  });
+
   test('does not claim unrelated localhost hooks', () => {
     expect(isKeeplineHook({ type: 'command', command: unrelatedLocalhostCommand })).toBe(false);
   });
@@ -150,7 +180,7 @@ describe('hook installer ownership detection', () => {
         hooks: [expectedHandler],
       },
     ]);
-    for (const event of ['PreToolUse', 'Notification', 'Stop', 'UserPromptSubmit'] as const) {
+    for (const event of ['PreToolUse', 'Notification', 'SessionStart', 'Stop', 'UserPromptSubmit'] as const) {
       expect(matcherBlock(settings.hooks?.[event]?.[0]).hooks[0]).toEqual(expectedHandler);
     }
   });

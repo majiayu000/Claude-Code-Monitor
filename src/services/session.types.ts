@@ -7,6 +7,7 @@ import type {
   Session,
   SessionListItem,
   SessionStatus,
+  SessionStatusSource,
 } from '../domain/session/index.js';
 
 /** Session creation input */
@@ -18,12 +19,15 @@ export interface CreateSessionInput {
   title?: string;
   pid?: number;
   tty?: string;
+  statusSource?: SessionStatusSource;
 }
 
 /** Session update input */
 export interface UpdateSessionInput {
   status?: SessionStatus;
+  statusSource?: SessionStatusSource;
   title?: string;
+  initialPrompt?: string;
   lastTool?: string;
   lastToolInput?: string;
   currentFile?: string;

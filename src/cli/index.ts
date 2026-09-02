@@ -49,7 +49,7 @@ export function registerCommands(program: Command): void {
     .command('daemon <action>')
     .alias('d')
     .description('Manage background daemon (start, stop, restart, status)')
-    .option('--hooks', 'Install/uninstall Claude-compatible hooks with daemon')
+    .option('--hooks', 'Install/uninstall Claude Code and Codex hooks with daemon')
     .action(async (action, options) => (await import('./daemon.js')).daemonCommand(action, options));
 
   // Status
@@ -74,7 +74,7 @@ export function registerCommands(program: Command): void {
   // Hooks management
   program
     .command('hooks <action>')
-    .description('Manage Claude-compatible hooks (install, uninstall, status)')
+    .description('Manage Claude Code and Codex hooks (install, uninstall, status)')
     .action(async (action: string) => {
       const { installHooks, uninstallHooks } = await import('../adapters/hook/installer.js');
       const chalk = (await import('chalk')).default;
@@ -91,10 +91,16 @@ export function registerCommands(program: Command): void {
         case 'status': {
           const { getHookAvailability } = await import('../adapters/hook/availability.js');
           const status = await getHookAvailability();
-          console.log(`Hooks installed: ${status.installed ? chalk.green('Yes') : chalk.red('No')}`);
+          const installed = status.installation === 'all'
+            ? chalk.green('Yes')
+            : status.installation === 'partial' ? chalk.yellow('Partial') : chalk.red('No');
+          console.log(`Hooks installed: ${installed}`);
           console.log(`Hook receiver: ${status.receiverRunning ? chalk.green('Running') : chalk.yellow('Not running')}`);
           if (status.degraded) {
             console.log(chalk.yellow('Hooks are installed but no hook receiver is running. Start keepline daemon to receive hook events.'));
+          }
+          if (status.targets.some((target) => target.runtimeId === 'codex' && target.installed)) {
+            console.log(chalk.yellow('Codex hook trust is runtime-managed; verify these hooks are approved in Codex.'));
           }
           console.log(`Settings path: ${status.settingsPath}`);
           break;

@@ -6,7 +6,7 @@
  */
 
 import type { Session } from '../domain/session/index.js';
-import { generateTitle } from '../domain/session/index.js';
+import { generateTitle, isGeneratedSessionTitle } from '../domain/session/index.js';
 import type { ISessionRepository } from '../domain/session/repository.js';
 import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 import { emit } from '../lib/events.js';
@@ -40,16 +40,6 @@ export interface SyncOptions {
 export interface RuntimeSessionScan<T> {
   sessions: T[];
   failures: RuntimeScanFailure[];
-}
-
-function isGeneratedContextTitle(title: string): boolean {
-  return title === 'Unknown task' ||
-    /^继续[。.!！]?$/.test(title) ||
-    /^<recommended_plugins(?:\s|>)/i.test(title) ||
-    /^<environment_context(?:\s|>)/i.test(title) ||
-    /^#\s*AGENTS\.md instructions for(?:\s|$)/i.test(title) ||
-    /^AGENTS\.md: [^\n]+$/i.test(title) ||
-    /^AGENTS\.md instructions$/i.test(title);
 }
 
 export async function scanRuntimeSessions<T>(
@@ -89,6 +79,7 @@ export class SessionService {
       initialPrompt: input.initialPrompt,
       title: input.title || generateTitle(input.initialPrompt),
       status: 'running',
+      statusSource: input.statusSource ?? 'scan',
       pid: input.pid,
       tty: input.tty,
       lastActiveAt: new Date(),
@@ -107,9 +98,15 @@ export class SessionService {
     const existing = this.repository.findBySessionId(sessionId);
     const previousStatus = existing?.status;
 
+    // Explicit completion is durable. Live hooks and later scans may refresh
+    // activity fields, but they cannot reopen a completed session implicitly.
+    const safeInput = existing?.status === 'completed' && input.status !== 'completed'
+      ? { ...input, status: 'completed' as const, statusSource: existing.statusSource }
+      : input;
+
     const session = this.repository.upsert({
       sessionId,
-      ...input,
+      ...safeInput,
     });
 
     if (previousStatus && previousStatus !== session.status) {
@@ -218,9 +215,24 @@ export class SessionService {
           process || null,
           agentSession.lastActiveAt
         );
+        // A lifecycle hook is received after the transcript record that caused it.
+        // Keep that newer semantic observation while its process is still alive;
+        // otherwise the CPU/time heuristic would immediately overwrite it.
+        const hasNewerHookObservation = Boolean(
+          existing &&
+          process &&
+          existing.statusSource === 'hook' &&
+          (existing.status === 'running' || existing.status === 'waiting') &&
+          existing.lastActiveAt.getTime() > agentSession.lastActiveAt.getTime()
+        );
         // `completed` is written only by an explicit hook/user action. A later
         // process scan must not downgrade that durable signal to lost/idle.
-        const status = existing?.status === 'completed' ? 'completed' : detectedStatus;
+        const status = existing?.status === 'completed'
+          ? 'completed'
+          : hasNewerHookObservation ? existing!.status : detectedStatus;
+        const lastActiveAt = hasNewerHookObservation
+          ? existing!.lastActiveAt
+          : agentSession.lastActiveAt;
 
         if (existing) {
           const nextStatus = existing.status === 'completed' ? 'completed' : status;
@@ -229,7 +241,7 @@ export class SessionService {
 
           // Replace only generated context noise; preserve normal and user-edited titles.
           const shouldUpdateTitle =
-            isGeneratedContextTitle(existing.title) &&
+            isGeneratedSessionTitle(existing.title) &&
             agentSession.firstMessage &&
             agentSession.firstMessage !== 'Unknown task';
 
@@ -237,6 +249,9 @@ export class SessionService {
             sessionId: agentSession.sessionId,
             client,
             status: nextStatus,
+            statusSource: existing.status === 'completed' || hasNewerHookObservation
+              ? existing.statusSource
+              : 'scan',
             ...(shouldUpdateTitle && {
               title: generateTitle(agentSession.firstMessage!),
               initialPrompt: agentSession.firstMessage,
@@ -247,7 +262,7 @@ export class SessionService {
               : undefined,
             currentFile: agentSession.currentFile,
             lastMessage: agentSession.lastMessage,
-            lastActiveAt: agentSession.lastActiveAt,
+            lastActiveAt,
             pid: process?.pid,
             tty: process?.tty,
             toolCount: agentSession.toolCount,
@@ -279,6 +294,7 @@ export class SessionService {
             initialPrompt: agentSession.firstMessage || 'Unknown task',
             title,
             status,
+            statusSource: 'scan',
             lastTool: agentSession.lastTool,
             lastToolInput: agentSession.lastToolInput
               ? JSON.stringify(agentSession.lastToolInput)
@@ -313,6 +329,7 @@ export class SessionService {
             const lostSession = this.repository.upsert({
               sessionId: session.sessionId,
               status: 'lost',
+              statusSource: 'scan',
               pid: undefined,
             });
             lost++;
@@ -363,6 +380,7 @@ export class SessionService {
     this.repository.upsert({
       sessionId,
       status: 'completed',
+      statusSource: 'user',
       completedAt: new Date(),
       pid: undefined,
     });

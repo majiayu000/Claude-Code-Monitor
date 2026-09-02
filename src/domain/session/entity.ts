@@ -6,6 +6,7 @@ import type { Entity } from '../shared/types.js';
 import type {
   AgentClient,
   SessionStatus,
+  SessionStatusSource,
   ToolCallInfo,
   SessionUsageStats,
 } from './value-objects.js';
@@ -23,6 +24,7 @@ export interface Session extends Entity {
 
   /** Current status */
   status: SessionStatus;
+  statusSource: SessionStatusSource;
 
   /** Task information */
   title: string;
@@ -95,6 +97,7 @@ export type SessionListItem = Pick<
   | 'client'
   | 'directory'
   | 'status'
+  | 'statusSource'
   | 'title'
   | 'startedAt'
   | 'lastActiveAt'
@@ -124,12 +127,14 @@ export interface CreateSessionInput {
   title?: string;
   pid?: number;
   tty?: string;
+  statusSource?: SessionStatusSource;
 }
 
 /** Input for updating an existing session */
 export interface UpdateSessionInput {
   directory?: string;
   status?: SessionStatus;
+  statusSource?: SessionStatusSource;
   title?: string;
   initialPrompt?: string;
   lastTool?: string;
@@ -172,6 +177,17 @@ export function generateTitle(prompt: string): string {
   }
 
   return summarizePrompt(prompt);
+}
+
+/** Identify placeholder titles that may be replaced by the first real prompt. */
+export function isGeneratedSessionTitle(title: string): boolean {
+  return title === 'Unknown task' ||
+    /^继续[。.!！]?$/.test(title) ||
+    /^<recommended_plugins(?:\s|>)/i.test(title) ||
+    /^<environment_context(?:\s|>)/i.test(title) ||
+    /^#\s*AGENTS\.md instructions for(?:\s|$)/i.test(title) ||
+    /^AGENTS\.md: [^\n]+$/i.test(title) ||
+    /^AGENTS\.md instructions$/i.test(title);
 }
 
 /** Extract a user-authored task from Codex/Claude context wrapper messages. */

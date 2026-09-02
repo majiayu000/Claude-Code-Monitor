@@ -7,8 +7,12 @@ import {
 } from '../adapters/hook/server.js';
 import {
   buildHookAvailability,
+  isKeeplineHookHealth,
   isHookReceiverRunning,
 } from '../adapters/hook/availability.js';
+import { resetDatabase } from '../db/migrations.js';
+import { closeDatabase } from '../infrastructure/database/sqlite.js';
+import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 
 const fixedNow = new Date('2026-07-02T15:30:00.000Z');
 
@@ -85,6 +89,23 @@ describe('hook server payload normalization', () => {
     ).toBe(true);
   });
 
+  test('accepts Codex SessionStart payloads', () => {
+    expect(normalizeHookEvent({
+      session_id: 'codex-session-1234',
+      transcript_path: '/tmp/codex-session.jsonl',
+      cwd: '/tmp/project',
+      hook_event_name: 'SessionStart',
+      source: 'startup',
+    }, fixedNow)).toEqual({
+      event_type: 'SessionStart',
+      session_id: 'codex-session-1234',
+      transcript_path: '/tmp/codex-session.jsonl',
+      cwd: '/tmp/project',
+      timestamp: '2026-07-02T15:30:00.000Z',
+      source: 'startup',
+    });
+  });
+
   test('rejects malformed tool payloads', () => {
     expect(
       normalizeHookEvent({
@@ -105,6 +126,7 @@ describe('hook server request security', () => {
       await server.close();
       server = null;
     }
+    closeDatabase();
   });
 
   function app(): FastifyInstance {
@@ -151,7 +173,10 @@ describe('hook server request security', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: 'ok' });
+    expect(response.json()).toMatchObject({
+      status: 'ok',
+      service: 'keepline-hook-receiver',
+    });
   });
 
   test('allows loopback hook requests to reach payload validation', async () => {
@@ -173,6 +198,37 @@ describe('hook server request security', () => {
     });
   });
 
+  test('creates complete session metadata when a tool event arrives first', async () => {
+    resetDatabase();
+    const response = await app().inject({
+      method: 'POST',
+      url: '/hook?runtime=codex',
+      headers: {
+        host: '127.0.0.1:7890',
+        'content-type': 'application/json',
+      },
+      payload: {
+        hook_event_name: 'PreToolUse',
+        session_id: '019d0b7e-6a75-7cb0-b4fa-41f927bf13d1',
+        cwd: '/tmp/tool-first-project',
+        tool_name: 'Read',
+        tool_input: { file_path: '/tmp/tool-first-project/README.md' },
+        timestamp: fixedNow.toISOString(),
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(sessionRepository.findBySessionId(
+      'codex_019d0b7e-6a75-7cb0-b4fa-41f927bf13d1'
+    )).toMatchObject({
+      client: 'codex',
+      directory: '/tmp/tool-first-project',
+      title: 'Unknown task',
+      status: 'running',
+      statusSource: 'hook',
+    });
+  });
+
   test('rejects cross-site browser fetch metadata', async () => {
     const response = await app().inject({
       method: 'POST',
@@ -190,6 +246,12 @@ describe('hook server request security', () => {
 });
 
 describe('hook availability status', () => {
+  test('accepts only health responses from the Keepline hook receiver', () => {
+    expect(isKeeplineHookHealth({ status: 'ok', service: 'keepline-hook-receiver' })).toBe(true);
+    expect(isKeeplineHookHealth({ status: 'ok' })).toBe(false);
+    expect(isKeeplineHookHealth('ok')).toBe(false);
+  });
+
   test('treats a daemon-owned healthy receiver as running outside the daemon process', async () => {
     const calls: Array<{ url: string; timeoutMs: number }> = [];
 
@@ -209,7 +271,7 @@ describe('hook availability status', () => {
     expect(calls).toEqual([{ url: 'http://127.0.0.1:7890', timeoutMs: 50 }]);
   });
 
-  test('does not probe a receiver when neither local server nor daemon is running', async () => {
+  test('discovers a receiver owned by a decoupled service without a daemon pid', async () => {
     let probed = false;
 
     await expect(
@@ -222,9 +284,9 @@ describe('hook availability status', () => {
           return true;
         },
       })
-    ).resolves.toBe(false);
+    ).resolves.toBe(true);
 
-    expect(probed).toBe(false);
+    expect(probed).toBe(true);
   });
 
   test('marks installed hooks without a receiver as degraded', () => {

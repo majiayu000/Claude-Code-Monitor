@@ -20,6 +20,7 @@ interface SessionCardProps {
   getSessionFull?: (sessionId: string) => SessionFullData | undefined
   loadSessionFull?: (sessionId: string) => Promise<SessionFullData | null>
   isLoadingFull?: (sessionId: string) => boolean
+  defaultExpanded?: boolean
 }
 
 export const SessionCard = memo(function SessionCard({
@@ -30,8 +31,9 @@ export const SessionCard = memo(function SessionCard({
   getSessionFull,
   loadSessionFull,
   isLoadingFull,
+  defaultExpanded = false,
 }: SessionCardProps) {
-  const [expanded, toggle] = useToggle(false)
+  const [expanded, toggle] = useToggle(defaultExpanded)
 
   const statusColor = getStatusColor(session.status)
   const cardId = `session-${session.sessionId}`

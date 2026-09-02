@@ -5,6 +5,7 @@
 import { createReadStream } from 'fs';
 import { createInterface } from 'readline';
 import { ParseError } from '../../lib/errors.js';
+import { scopeCodexSessionId } from '../../lib/session-id.js';
 import { extractTaskPrompt, type ToolCallInfo } from '../../domain/session/index.js';
 import type { CodexJsonlEntry, CodexParsedSessionData } from './types.js';
 import {
@@ -35,13 +36,7 @@ interface CodexAccumulator {
   usageAccumulator: ReturnType<typeof createUsageAccumulator>;
 }
 
-export function scopeCodexSessionId(rawSessionId: string): string {
-  return rawSessionId.startsWith('codex_') ? rawSessionId : `codex_${rawSessionId}`;
-}
-
-export function unscopeCodexSessionId(sessionId: string): string {
-  return sessionId.startsWith('codex_') ? sessionId.slice('codex_'.length) : sessionId;
-}
+export { scopeCodexSessionId, unscopeCodexSessionId } from '../../lib/session-id.js';
 
 function parseCodexTimestampMs(timestamp: unknown): number | undefined {
   if (typeof timestamp !== 'string') return undefined;

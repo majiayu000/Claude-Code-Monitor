@@ -1,5 +1,5 @@
 /**
- * Claude hooks installer
+ * Claude Code and Codex hooks installer
  *
  * Registers a Keepline hook under Claude Code's matcher-block settings shape:
  *   hooks.<Event>[] = [{ matcher?, hooks: [{ type: "command", command }] }]
@@ -8,8 +8,9 @@
  * it does not rely on `$CLAUDE_*` environment variables.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { CLAUDE_SETTINGS } from '../../lib/paths.js';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { dirname } from 'path';
+import { CLAUDE_SETTINGS, getCodexHooksPath } from '../../lib/paths.js';
 import { config } from '../../lib/config.js';
 import { logger } from '../../lib/logger.js';
 import type {
@@ -21,34 +22,60 @@ import type {
 } from './types.js';
 
 const KEEPLINE_HOOK_MARKER = 'KEEPLINE_HOOK_MARKER=keepline-hook-v2';
-const HOOK_TYPES: HookEventType[] = [
+const CLAUDE_HOOK_TYPES: HookEventType[] = [
   'PreToolUse',
   'PostToolUse',
   'Notification',
+  'SessionStart',
   'Stop',
   'UserPromptSubmit',
 ];
 
-/** Get current Claude settings */
-function getClaudeSettings(): ClaudeSettings {
-  if (!existsSync(CLAUDE_SETTINGS)) {
-    logger.debug('Claude settings file not found, using defaults');
+const CODEX_HOOK_TYPES: HookEventType[] = [
+  'PreToolUse',
+  'PostToolUse',
+  'SessionStart',
+  'Stop',
+  'UserPromptSubmit',
+];
+
+const ALL_HOOK_TYPES = [...new Set([...CLAUDE_HOOK_TYPES, ...CODEX_HOOK_TYPES])];
+
+type HookRuntimeId = 'claude-code' | 'codex';
+
+interface HookTarget {
+  runtimeId: HookRuntimeId;
+  settingsPath: string;
+  hookTypes: HookEventType[];
+}
+
+function getHookTargets(): HookTarget[] {
+  return [
+    { runtimeId: 'claude-code', settingsPath: CLAUDE_SETTINGS, hookTypes: CLAUDE_HOOK_TYPES },
+    { runtimeId: 'codex', settingsPath: getCodexHooksPath(), hookTypes: CODEX_HOOK_TYPES },
+  ];
+}
+
+/** Read one runtime's hook settings. */
+function getHookSettings(settingsPath: string): ClaudeSettings {
+  if (!existsSync(settingsPath)) {
+    logger.debug('Hook settings file not found, using defaults', { path: settingsPath });
     return {};
   }
 
   try {
-    const content = readFileSync(CLAUDE_SETTINGS, 'utf-8');
+    const content = readFileSync(settingsPath, 'utf-8');
     return JSON.parse(content) as ClaudeSettings;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`Failed to parse Claude settings: ${message}`, { path: CLAUDE_SETTINGS });
-    return {};
+    throw new Error(`Failed to parse hook settings at ${settingsPath}: ${message}`);
   }
 }
 
-/** Save Claude settings */
-function saveClaudeSettings(settings: ClaudeSettings): void {
-  writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+/** Save hook settings while preserving unrelated keys and handlers. */
+function saveHookSettings(settingsPath: string, settings: ClaudeSettings): void {
+  mkdirSync(dirname(settingsPath), { recursive: true });
+  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
 }
 
 /**
@@ -58,8 +85,11 @@ function saveClaudeSettings(settings: ClaudeSettings): void {
  * is a harmless env assignment used only to identify Keepline-owned hooks in
  * the settings file.
  */
-function getHookCommand(port: number = config.get().hookPort): string {
-  return `${KEEPLINE_HOOK_MARKER} curl -fsS -X POST http://127.0.0.1:${port}/hook -H "Content-Type: application/json" --data-binary @- > /dev/null 2>&1 || true`;
+function getHookCommand(
+  port: number = config.get().hookPort,
+  runtimeId: HookRuntimeId = 'claude-code'
+): string {
+  return `${KEEPLINE_HOOK_MARKER} curl -fsS -X POST "http://127.0.0.1:${port}/hook?runtime=${runtimeId}" -H "Content-Type: application/json" --data-binary @- > /dev/null 2>&1 || true`;
 }
 
 /** Detect the pre-v2 command that incorrectly relied on `$CLAUDE_*` env vars */
@@ -177,7 +207,8 @@ function createKeeplineHookConfig(
 
 export function installKeeplineHookConfig(
   settings: ClaudeSettings,
-  hookCommand: string = getHookCommand()
+  hookCommand: string = getHookCommand(),
+  hookTypes: HookEventType[] = CLAUDE_HOOK_TYPES
 ): boolean {
   const before = JSON.stringify(settings.hooks ?? {});
 
@@ -185,7 +216,7 @@ export function installKeeplineHookConfig(
     settings.hooks = {};
   }
 
-  for (const hookType of HOOK_TYPES) {
+  for (const hookType of hookTypes) {
     const existingHooks = settings.hooks[hookType] ?? [];
     settings.hooks[hookType] = [
       ...removeKeeplineHooks(existingHooks),
@@ -200,7 +231,7 @@ export function uninstallKeeplineHookConfig(settings: ClaudeSettings): number {
   if (!settings.hooks) return 0;
 
   let removed = 0;
-  for (const hookType of HOOK_TYPES) {
+  for (const hookType of ALL_HOOK_TYPES) {
     const hooks = settings.hooks[hookType];
     if (!hooks) continue;
     removed += countKeeplineHooks(hooks);
@@ -210,8 +241,8 @@ export function uninstallKeeplineHookConfig(settings: ClaudeSettings): number {
   return removed;
 }
 
-function hasKeeplineHook(settings: ClaudeSettings): boolean {
-  return HOOK_TYPES.every((hookType) => settings.hooks?.[hookType]?.some(isKeeplineHook));
+function hasKeeplineHook(settings: ClaudeSettings, hookTypes: HookEventType[]): boolean {
+  return hookTypes.every((hookType) => settings.hooks?.[hookType]?.some(isKeeplineHook));
 }
 
 export function hasCurrentLifecycleHook(
@@ -228,50 +259,95 @@ export function hasCurrentLifecycleHook(
   }) ?? false;
 }
 
-/** Check whether Claude Stop events target the running lifecycle receiver. */
-export function isLifecycleHookInstalled(port: number = config.get().hookPort): boolean {
-  return hasCurrentLifecycleHook(getClaudeSettings(), getHookCommand(port));
+/** Check whether one runtime's Stop events target the running lifecycle receiver. */
+export function isLifecycleHookInstalled(
+  port: number = config.get().hookPort,
+  runtimeId: string = 'claude-code'
+): boolean {
+  const target = getHookTargets().find((candidate) => candidate.runtimeId === runtimeId);
+  if (!target) return false;
+  return hasCurrentLifecycleHook(
+    getHookSettings(target.settingsPath),
+    getHookCommand(port, target.runtimeId)
+  );
 }
 
 /** Check if keepline hooks are installed */
 export function areHooksInstalled(): boolean {
-  const settings = getClaudeSettings();
-  return hasKeeplineHook(settings);
+  return getHookTargets().every((target) => hasKeeplineHook(
+    getHookSettings(target.settingsPath),
+    target.hookTypes
+  ));
 }
 
-/** Install keepline hooks into Claude settings */
+/** Install Keepline hooks into Claude Code and Codex settings. */
 export function installHooks(): void {
-  const settings = getClaudeSettings();
-  if (installKeeplineHookConfig(settings)) {
-    saveClaudeSettings(settings);
-    logger.info('Keepline hooks installed');
-  } else {
-    logger.debug('Keepline hooks already installed');
+  const targets = getHookTargets().map((target) => ({
+    ...target,
+    settings: getHookSettings(target.settingsPath),
+  }));
+  for (const target of targets) {
+    const changed = installKeeplineHookConfig(
+      target.settings,
+      getHookCommand(config.get().hookPort, target.runtimeId),
+      target.hookTypes
+    );
+    if (changed) {
+      saveHookSettings(target.settingsPath, target.settings);
+      logger.info(`Keepline ${target.runtimeId} hooks installed`);
+      if (target.runtimeId === 'codex') {
+        logger.warn('Codex must approve newly installed hooks before they run; verify hook trust in Codex');
+      }
+    } else {
+      logger.debug(`Keepline ${target.runtimeId} hooks already installed`);
+    }
   }
 }
 
-/** Uninstall keepline hooks from Claude settings */
+/** Uninstall only Keepline-owned hooks from Claude Code and Codex settings. */
 export function uninstallHooks(): void {
-  const settings = getClaudeSettings();
-
-  const removed = uninstallKeeplineHookConfig(settings);
-  if (removed > 0) {
-    saveClaudeSettings(settings);
-    logger.info('Keepline hooks uninstalled');
-  } else {
-    logger.debug('Keepline hooks not installed');
+  const targets = getHookTargets().map((target) => ({
+    ...target,
+    settings: getHookSettings(target.settingsPath),
+  }));
+  for (const target of targets) {
+    const removed = uninstallKeeplineHookConfig(target.settings);
+    if (removed > 0) {
+      saveHookSettings(target.settingsPath, target.settings);
+      logger.info(`Keepline ${target.runtimeId} hooks uninstalled`);
+    } else {
+      logger.debug(`Keepline ${target.runtimeId} hooks not installed`);
+    }
   }
 }
 
 /** Get hook status info */
 export function getHookStatus(): {
   installed: boolean;
+  installation: 'none' | 'partial' | 'all';
   settingsPath: string;
   hookCommand: string;
+  targets: Array<{
+    runtimeId: HookRuntimeId;
+    installed: boolean;
+    settingsPath: string;
+    trustStatus: 'not-required' | 'runtime-managed';
+  }>;
 } {
+  const targets = getHookTargets().map((target) => ({
+    runtimeId: target.runtimeId,
+    installed: hasKeeplineHook(getHookSettings(target.settingsPath), target.hookTypes),
+    settingsPath: target.settingsPath,
+    trustStatus: target.runtimeId === 'codex' ? 'runtime-managed' as const : 'not-required' as const,
+  }));
+  const installedCount = targets.filter((target) => target.installed).length;
   return {
-    installed: areHooksInstalled(),
-    settingsPath: CLAUDE_SETTINGS,
+    installed: installedCount > 0,
+    installation: installedCount === 0
+      ? 'none'
+      : installedCount === targets.length ? 'all' : 'partial',
+    settingsPath: targets.map((target) => target.settingsPath).join(', '),
     hookCommand: getHookCommand(),
+    targets,
   };
 }

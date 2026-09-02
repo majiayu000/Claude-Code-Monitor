@@ -6,7 +6,7 @@
 
 import { Hono } from 'hono';
 import { getAllSessions, completeSession } from '../../../services/session.service.js';
-import { buildRecoveryCommand, recoverSession, getRecoveryInfo } from '../../../services/recovery.service.js';
+import { buildRecoveryShellCommand, recoverSession, getRecoveryInfo } from '../../../services/recovery.service.js';
 import { stopProcess, isProcessRunning } from '../../../adapters/process/scanner.js';
 import { logger } from '../../../lib/logger.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -78,7 +78,7 @@ app.post('/:id/recover', async (c) => {
         method: result.method,
         command: result.success
           ? undefined
-          : buildRecoveryCommand(session, recoveryMethod, skipPermissions),
+          : buildRecoveryShellCommand(session, recoveryMethod, skipPermissions),
       },
     });
   } catch (error) {
@@ -131,13 +131,20 @@ app.post('/:id/stop', async (c) => {
     return c.json({ success: false, error: 'Session not found' }, 404);
   }
 
-  // For lost sessions, just mark as completed (no process to kill)
-  if (session.status === 'lost' || !session.pid) {
+  // Lost sessions have no live process and can be cleared explicitly.
+  if (session.status === 'lost') {
     completeSession(sessionId);
     return c.json({
       success: true,
       message: 'Session cleared (no process was running)'
     });
+  }
+
+  if (!session.pid) {
+    return c.json({
+      success: false,
+      error: 'Process identity is not available yet; refresh and try again',
+    }, 409);
   }
 
   // Check if process is still running

@@ -12,6 +12,7 @@ import {
   buildClaudeCommand,
   buildClaudeCommandArgs,
   buildRecoveryCommand,
+  buildRecoveryShellCommand,
   RecoveryService,
 } from '../services/recovery.service.js';
 import { scopeCodexSessionId } from '../adapters/codex/parser.js';
@@ -24,6 +25,7 @@ function recoverySession(overrides: Partial<Session> = {}): Session {
     client: 'claude',
     directory: process.cwd(),
     status: 'lost',
+    statusSource: 'scan',
     title: 'Recover me',
     initialPrompt: 'Recover me',
     lastActiveAt: new Date(),
@@ -46,7 +48,9 @@ function createRepository(session: Session | null): ISessionRepository {
         sessionId: session.sessionId,
         client: session.client,
         status: session.status,
+        statusSource: session.statusSource,
         title: session.title,
+        lastActiveAt: session.lastActiveAt,
       }] : [],
     findAll: () => session ? [session] : [],
     findOperational: () => session ? [session] : [],
@@ -83,6 +87,16 @@ describe('recovery command security', () => {
     ]);
     expect(buildClaudeCommand('resume', 'safe-session-123')).toBe(
       'claude --resume safe-session-123'
+    );
+  });
+
+  test('builds a paste-ready recovery command with a shell-safe cwd', () => {
+    const session = recoverySession({
+      directory: "/tmp/agent's project",
+    });
+
+    expect(buildRecoveryShellCommand(session, 'resume')).toBe(
+      "cd '/tmp/agent'\\''s project' && claude --resume safe-session-123"
     );
   });
 
@@ -161,6 +175,19 @@ describe('recovery command security', () => {
     expect(result).toEqual({
       canRecover: true,
       availableMethods: ['continue', 'new'],
+    });
+  });
+
+  test('does not build recovery commands for a missing working directory', () => {
+    const service = new RecoveryService(createRepository(null), () => []);
+    const result = service.canRecover(recoverySession({
+      directory: `/tmp/keepline-missing-${process.pid}`,
+    }));
+
+    expect(result).toEqual({
+      canRecover: false,
+      reason: 'Session directory no longer exists',
+      availableMethods: [],
     });
   });
 

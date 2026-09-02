@@ -25,10 +25,6 @@ export default defineConfig({
         target: backendTarget,
         changeOrigin: true,
       },
-      '/ws/terminal': {
-        target: backendWsTarget,
-        ws: true,
-      },
       '/ws': {
         target: backendWsTarget,
         ws: true,

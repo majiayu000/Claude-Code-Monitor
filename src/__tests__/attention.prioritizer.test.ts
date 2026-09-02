@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { basename } from 'path';
 import type { AggregatedSession } from '../services/session.types.js';
 import { buildAttentionOverview } from '../services/attention.prioritizer.js';
 import type { SessionDigest } from '../domain/orchestrator/index.js';
@@ -15,8 +16,9 @@ function session(input: Partial<AggregatedSession> & {
     id: input.sessionId,
     sessionId: input.sessionId,
     client: input.client ?? 'codex',
-    directory: input.directory ?? '/tmp/keepline',
+    directory: input.directory ?? process.cwd(),
     status: input.status,
+    statusSource: input.statusSource ?? 'scan',
     title: input.title ?? input.sessionId,
     initialPrompt: input.initialPrompt ?? '',
     lastTool: input.lastTool,
@@ -39,7 +41,7 @@ function session(input: Partial<AggregatedSession> & {
 }
 
 describe('buildAttentionOverview', () => {
-  test('ranks waiting above lost, high-cost, stale, idle, running, and completed', () => {
+  test('projects runtime states into board lanes and orders lanes by ownership', () => {
     const overview = buildAttentionOverview([
       session({ sessionId: 'running', status: 'running' }),
       session({ sessionId: 'completed', status: 'completed' }),
@@ -59,6 +61,8 @@ describe('buildAttentionOverview', () => {
       session({ sessionId: 'lost', status: 'lost' }),
       session({ sessionId: 'waiting', status: 'waiting' }),
     ], {
+      includeCompleted: true,
+      ordering: 'board',
       now: NOW,
       highCostThreshold: 1,
       staleHours: 24,
@@ -68,9 +72,10 @@ describe('buildAttentionOverview', () => {
       'waiting',
       'lost',
       'high-cost',
-      'stale',
-      'idle',
       'running',
+      'stale',
+      'completed',
+      'idle',
     ]);
     expect(overview.items[0]).toMatchObject({
       rank: 1,
@@ -78,10 +83,18 @@ describe('buildAttentionOverview', () => {
       reasons: [expect.objectContaining({ code: 'waiting_for_human' })],
     });
     expect(overview.items[1].recommendedAction).toBe('recover');
-    expect(overview.items.find((item) => item.sessionId === 'completed')).toBeUndefined();
+    expect(overview.items.map((item) => item.lane)).toEqual([
+      'needs_you',
+      'needs_you',
+      'working',
+      'working',
+      'working',
+      'finished',
+      'paused',
+    ]);
   });
 
-  test('keeps higher-priority states above lower-priority stacked reasons', () => {
+  test('keeps waiting before lost and uses recency inside working', () => {
     const overview = buildAttentionOverview([
       session({
         sessionId: 'lost-high-cost',
@@ -108,6 +121,7 @@ describe('buildAttentionOverview', () => {
       }),
       session({ sessionId: 'waiting-only', status: 'waiting' }),
     ], {
+      ordering: 'board',
       now: NOW,
       highCostThreshold: 1,
       staleHours: 24,
@@ -169,6 +183,7 @@ describe('buildAttentionOverview', () => {
     expect(overview.items).toHaveLength(1);
     expect(overview.items[0]).toMatchObject({
       sessionId: 'completed',
+      lane: 'finished',
       recommendedAction: 'none',
       score: 0,
     });
@@ -207,6 +222,21 @@ describe('buildAttentionOverview', () => {
     expect(overview.stats.lostWindowHours).toBeUndefined();
   });
 
+  test('does not recommend recovery when the working directory is unavailable', () => {
+    const overview = buildAttentionOverview([
+      session({
+        sessionId: 'missing-directory',
+        status: 'lost',
+        directory: `/tmp/keepline-missing-${process.pid}`,
+      }),
+    ], { now: NOW });
+
+    expect(overview.items[0]).toMatchObject({
+      canRecover: false,
+      recommendedAction: 'review',
+    });
+  });
+
   test('includes compact session context for actionable review cards', () => {
     const overview = buildAttentionOverview([
       session({
@@ -228,6 +258,22 @@ describe('buildAttentionOverview', () => {
       currentFile: '/tmp/keepline/src/services/attention.prioritizer.ts',
       messageCount: 12,
       toolCount: 4,
+    });
+  });
+
+  test('resolves nested working directories to their project root', () => {
+    const overview = buildAttentionOverview([
+      session({
+        sessionId: 'nested-project-session',
+        status: 'running',
+        directory: `${process.cwd()}/src/services`,
+      }),
+    ], { now: NOW });
+
+    expect(overview.items[0].project).toMatchObject({
+      rootPath: process.cwd(),
+      name: basename(process.cwd()),
+      source: 'git-root',
     });
   });
 
@@ -274,6 +320,67 @@ describe('buildAttentionOverview', () => {
         currentFile: '/Users/lifcc/Desktop/code/work/infra/vsr/runs/topaz_dragon_cleanup_20260629T035947Z/cleanup_standard.png',
       },
     });
+  });
+
+  test('does not present attachment markup as the agent task', () => {
+    const attachmentDigest: SessionDigest = {
+      id: 'attachment-digest-id',
+      sessionId: 'image-prompt-session',
+      summary: '<image name=[Image #1] path="/tmp/capture.png">',
+      nextActions: [],
+      blockers: [],
+      waitingForHuman: false,
+      source: 'deterministic',
+      status: 'fresh',
+      sourceUpdatedAt: RECENT,
+      generatedAt: NOW,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const overview = buildAttentionOverview([
+      session({
+        sessionId: 'image-prompt-session',
+        status: 'waiting',
+        title: '<image name=[Image #1] path="/tmp/captu...',
+        initialPrompt: '<image name=[Image #1] path="/tmp/capture.png">',
+        lastMessage: 'The dashboard spacing needs a clearer compact layout.',
+      }),
+    ], {
+      now: NOW,
+      digests: new Map([['image-prompt-session', attachmentDigest]]),
+    });
+
+    expect(overview.items[0].intent).toMatchObject({
+      task: 'Continue: The dashboard spacing needs a clearer compact layout',
+      taskSource: 'last_message',
+      confidence: 'medium',
+    });
+  });
+
+  test('keeps real task text that follows an image attachment', () => {
+    const overview = buildAttentionOverview([
+      session({
+        sessionId: 'image-with-task',
+        status: 'running',
+        initialPrompt: '<image name=[Image #1] path="/tmp/capture.png"> Fix the login button alignment',
+      }),
+    ], { now: NOW });
+
+    expect(overview.items[0].intent).toMatchObject({
+      task: 'Fix the login button alignment',
+      taskSource: 'initial_prompt',
+      confidence: 'high',
+    });
+    expect(overview.items[0].intent.noiseFlags).not.toContain('instructions_heavy');
+  });
+
+  test('keeps score-first ordering for the CLI by default', () => {
+    const overview = buildAttentionOverview([
+      session({ sessionId: 'finished', status: 'completed' }),
+      session({ sessionId: 'paused', status: 'idle' }),
+    ], { includeCompleted: true, now: NOW });
+
+    expect(overview.items.map((item) => item.sessionId)).toEqual(['paused', 'finished']);
   });
 
   test('skips low-information response openers when deriving intent', () => {

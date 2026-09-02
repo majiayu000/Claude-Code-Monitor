@@ -6,7 +6,13 @@ import { workItemRepository } from '../../infrastructure/database/repositories/w
 import { taskDispatchRepository } from '../../infrastructure/database/repositories/task-dispatch.repository.js';
 import { emit } from '../../lib/events.js';
 import { logger } from '../../lib/logger.js';
-import { isValidSessionId } from '../../lib/session-id.js';
+import { isValidSessionId, scopeCodexSessionId } from '../../lib/session-id.js';
+import {
+  generateTitle,
+  isGeneratedSessionTitle,
+  type AgentClient,
+  type SessionStatus,
+} from '../../domain/session/index.js';
 import {
   isAllowedFetchMetadata,
   isAllowedRequestHost,
@@ -17,6 +23,7 @@ const ACCEPTED_EVENT_TYPES = new Set([
   'PreToolUse',
   'PostToolUse',
   'Notification',
+  'SessionStart',
   'Stop',
   'UserPromptSubmit',
 ]);
@@ -68,6 +75,23 @@ function isAllowedRequest(request: Request, port: number): boolean {
 
 function json(body: Record<string, unknown>, status = 200): Response {
   return Response.json(body, { status });
+}
+
+function parseRuntimeHint(url: URL): AgentClient | null | undefined {
+  const runtime = url.searchParams.get('runtime');
+  if (runtime === null) return undefined;
+  if (runtime === 'claude-code') return 'claude';
+  if (runtime === 'codex') return 'codex';
+  return null;
+}
+
+function observedStatus(eventType: string): SessionStatus | undefined {
+  if (eventType === 'Stop') return 'waiting';
+  if (eventType === 'SessionStart' || eventType === 'UserPromptSubmit' ||
+      eventType === 'PreToolUse' || eventType === 'PostToolUse') {
+    return 'running';
+  }
+  return undefined;
 }
 
 function recordCompletionClaim(
@@ -157,7 +181,7 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
       }
       const url = new URL(request.url);
       if (request.method === 'GET' && url.pathname === '/health') {
-        return json({ status: 'ok', mode: 'lifecycle-only' });
+        return json({ status: 'ok', service: 'keepline-hook-receiver', mode: 'lifecycle-only' });
       }
       if (request.method !== 'POST' || url.pathname !== '/hook') {
         return json({ success: false, error: 'Not found' }, 404);
@@ -187,9 +211,13 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
             !isValidSessionId(body.session_id)) {
           return json({ success: false, error: 'Invalid hook event payload' }, 400);
         }
-        if (eventType !== 'Stop') {
-          return json({ success: true, ignored: true });
+        const runtimeHint = parseRuntimeHint(url);
+        if (runtimeHint === null || typeof body.cwd !== 'string' || body.cwd.length === 0) {
+          return json({ success: false, error: 'Invalid hook event payload' }, 400);
         }
+        const sessionId = runtimeHint === 'codex'
+          ? scopeCodexSessionId(body.session_id)
+          : body.session_id;
 
         const eventTimestamp = typeof body.timestamp === 'string'
           ? new Date(body.timestamp)
@@ -197,46 +225,91 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
         if (Number.isNaN(eventTimestamp.getTime())) {
           return json({ success: false, error: 'Invalid hook event timestamp' }, 400);
         }
-        const existing = sessionRepository.findBySessionId(body.session_id);
+        let existing = sessionRepository.findBySessionId(sessionId);
         if (!existing) {
-          if (typeof body.cwd === 'string' && recordCompletionClaim(
-            body.session_id,
-            body.cwd,
-            body.last_assistant_message,
-            eventTimestamp,
-            false
-          ) === 'pending') {
-            emit('session:turn-ended', {
-              sessionId: body.session_id,
-              timestamp: eventTimestamp,
-            });
-            return json({ success: true, pending: true }, 202);
+          if (eventType === 'Stop') {
+            if (recordCompletionClaim(
+              sessionId,
+              body.cwd,
+              body.last_assistant_message,
+              eventTimestamp,
+              false
+            ) === 'pending') {
+              emit('session:turn-ended', {
+                sessionId,
+                timestamp: eventTimestamp,
+              });
+              return json({ success: true, pending: true }, 202);
+            }
+            return json({ success: false, error: 'Session not found' }, 404);
           }
-          return json({ success: false, error: 'Session not found' }, 404);
+          const status = observedStatus(eventType);
+          if (!status) return json({ success: false, error: 'Session not found' }, 404);
+          const initialPrompt = eventType === 'UserPromptSubmit' && typeof body.prompt === 'string'
+            ? body.prompt
+            : 'Unknown task';
+          existing = sessionRepository.upsert({
+            sessionId,
+            client: runtimeHint ?? 'claude',
+            directory: body.cwd,
+            status,
+            statusSource: 'hook',
+            title: generateTitle(initialPrompt),
+            initialPrompt,
+            startedAt: new Date(),
+            lastActiveAt: eventTimestamp,
+          });
+          emit('session:discovered', { session: existing });
         }
-        if (existing.client !== 'claude') {
-          return json({ success: false, error: 'Completion hook requires a Claude session' }, 409);
+        if (runtimeHint && runtimeHint !== existing.client) {
+          return json({ success: false, error: 'Hook runtime does not match the session' }, 409);
         }
-        if (typeof body.cwd !== 'string' || body.cwd !== existing.directory) {
+        if (body.cwd !== existing.directory) {
           return json({ success: false, error: 'Hook cwd does not match the session' }, 409);
         }
 
-        // Claude Stop means one response turn ended, not that the user's task completed.
-        // A completion suggestion requires a separate exact claim tied to an accepted link.
-        recordCompletionClaim(
-          body.session_id,
-          body.cwd,
-          body.last_assistant_message,
-          eventTimestamp,
-          true
-        );
-        emit('session:turn-ended', {
-          sessionId: body.session_id,
-          timestamp: eventTimestamp,
-          reason: typeof body.stop_reason === 'string'
-            ? body.stop_reason
-            : typeof body.reason === 'string' ? body.reason : undefined,
-        });
+        const status = observedStatus(eventType);
+        if (status && existing.status !== 'completed') {
+          const previousStatus = existing.status;
+          const prompt = eventType === 'UserPromptSubmit' && typeof body.prompt === 'string'
+            ? body.prompt
+            : undefined;
+          const session = sessionRepository.upsert({
+            sessionId,
+            status,
+            statusSource: 'hook',
+            lastActiveAt: eventTimestamp,
+            ...(typeof body.tool_name === 'string' && { lastTool: body.tool_name }),
+            ...(prompt && isGeneratedSessionTitle(existing.title) && {
+              title: generateTitle(prompt),
+              initialPrompt: prompt,
+            }),
+          });
+          if (previousStatus !== session.status) {
+            emit('session:updated', { session, previousStatus });
+          }
+        }
+
+        if (eventType === 'Stop') {
+          // Stop means one response turn ended, not that the user's task completed.
+          // A completion suggestion requires a separate exact claim tied to an accepted link.
+          if (existing.client === 'claude') {
+            recordCompletionClaim(
+              sessionId,
+              body.cwd,
+              body.last_assistant_message,
+              eventTimestamp,
+              true
+            );
+          }
+          emit('session:turn-ended', {
+            sessionId,
+            timestamp: eventTimestamp,
+            reason: typeof body.stop_reason === 'string'
+              ? body.stop_reason
+              : typeof body.reason === 'string' ? body.reason : undefined,
+          });
+        }
         return json({ success: true });
       } catch (error) {
         logger.error('Failed to receive lifecycle hook', error);

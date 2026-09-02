@@ -1,4 +1,4 @@
-import { useState, useMemo, memo, useCallback } from 'react'
+import { useState, useMemo, memo, useCallback, useEffect } from 'react'
 import type { Session, SessionFullData, PaginationInfo, TerminalApp } from '@/types'
 import { SessionCard } from '@/components/SessionCard'
 import { Button } from '@/components/Button'
@@ -21,6 +21,8 @@ interface SessionListProps {
   hasActiveFilters?: boolean
   totalCount?: number
   globalMatchCount?: number
+  initiallyExpandedSessionId?: string
+  onInitialExpansionConsumed?: () => void
 }
 
 type SessionStatus = 'running' | 'waiting' | 'idle' | 'lost' | 'completed'
@@ -47,6 +49,8 @@ export const SessionList = memo(function SessionList({
   hasActiveFilters = false,
   totalCount = sessions.length,
   globalMatchCount = pagination?.total ?? sessions.length,
+  initiallyExpandedSessionId,
+  onInitialExpansionConsumed,
 }: SessionListProps) {
   // Memoize grouped and sorted sessions
   const groupedSessions = useMemo(() => {
@@ -107,6 +111,8 @@ export const SessionList = memo(function SessionList({
           getSessionFull={getSessionFull}
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
       {groupedSessions.waiting.length > 0 && (
@@ -119,6 +125,8 @@ export const SessionList = memo(function SessionList({
           getSessionFull={getSessionFull}
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
       {groupedSessions.idle.length > 0 && (
@@ -131,6 +139,8 @@ export const SessionList = memo(function SessionList({
           getSessionFull={getSessionFull}
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
       {/* Secondary: Lost, Completed */}
@@ -144,6 +154,8 @@ export const SessionList = memo(function SessionList({
           getSessionFull={getSessionFull}
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
       {groupedSessions.completed.length > 0 && (
@@ -157,6 +169,8 @@ export const SessionList = memo(function SessionList({
           loadSessionFull={loadSessionFull}
           isLoadingFull={isLoadingFull}
           defaultCollapsed
+          initiallyExpandedSessionId={initiallyExpandedSessionId}
+          onInitialExpansionConsumed={onInitialExpansionConsumed}
         />
       )}
 
@@ -186,6 +200,8 @@ interface SessionGroupProps {
   loadSessionFull?: (sessionId: string) => Promise<SessionFullData | null>
   isLoadingFull?: (sessionId: string) => boolean
   defaultCollapsed?: boolean
+  initiallyExpandedSessionId?: string
+  onInitialExpansionConsumed?: () => void
 }
 
 const SessionGroup = memo(function SessionGroup({
@@ -197,9 +213,25 @@ const SessionGroup = memo(function SessionGroup({
   getSessionFull,
   loadSessionFull,
   isLoadingFull,
-  defaultCollapsed = false
+  defaultCollapsed = false,
+  initiallyExpandedSessionId,
+  onInitialExpansionConsumed,
 }: SessionGroupProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
+  const hasExpansionTarget = Boolean(
+    initiallyExpandedSessionId &&
+    sessions.some((session) => session.sessionId === initiallyExpandedSessionId)
+  )
+
+  useEffect(() => {
+    if (hasExpansionTarget) setCollapsed(false)
+  }, [hasExpansionTarget])
+
+  useEffect(() => {
+    if (hasExpansionTarget && !collapsed) {
+      onInitialExpansionConsumed?.()
+    }
+  }, [collapsed, hasExpansionTarget, onInitialExpansionConsumed])
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed(prev => !prev)
@@ -223,6 +255,7 @@ const SessionGroup = memo(function SessionGroup({
               getSessionFull={getSessionFull}
               loadSessionFull={loadSessionFull}
               isLoadingFull={isLoadingFull}
+              defaultExpanded={session.sessionId === initiallyExpandedSessionId}
             />
           ))}
         </div>

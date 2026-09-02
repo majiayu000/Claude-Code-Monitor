@@ -32,7 +32,7 @@ describe('Orchestrator Route Contract', () => {
     sessionRepository.upsert({
       sessionId: 'orchestrator-route-cost',
       client: 'codex',
-      directory: '/tmp/keepline-orchestrator',
+      directory: process.cwd(),
       status: 'running',
       title: 'Expensive local run',
       initialPrompt: 'Track cost',

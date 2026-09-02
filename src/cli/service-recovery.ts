@@ -58,7 +58,7 @@ function productionDependencies(): ServiceRecoveryDependencies {
     },
     openTerminal: openTerminalWithArgv,
     markRunning(sessionId) {
-      sessionRepository.upsert({ sessionId, status: 'running' });
+      sessionRepository.upsert({ sessionId, status: 'running', statusSource: 'user' });
     },
   };
 }

@@ -1,7 +1,9 @@
+import { existsSync } from 'fs';
 import type { AgentClient, SessionStatus } from '../domain/session/index.js';
 import type { SerializableSessionDigest, SessionDigest } from '../domain/orchestrator/index.js';
 import { serializeSessionDigest } from '../domain/orchestrator/index.js';
 import type { AggregatedSession } from './session.types.js';
+import { resolveProjectIdentity, type ProjectIdentity } from './project.identity.js';
 
 export type AttentionReasonCode =
   | 'waiting_for_human'
@@ -14,6 +16,15 @@ export type AttentionReasonCode =
 export type AttentionSeverity = 'critical' | 'warning' | 'info';
 
 export type RecommendedAction = 'review' | 'recover' | 'monitor' | 'none';
+
+export type AgentBoardLane = 'needs_you' | 'working' | 'finished' | 'paused';
+
+export const AGENT_BOARD_LANE_ORDER: readonly AgentBoardLane[] = [
+  'needs_you',
+  'working',
+  'finished',
+  'paused',
+];
 
 export interface AttentionReason {
   code: AttentionReasonCode;
@@ -63,16 +74,20 @@ export interface AttentionIntent {
 
 export interface AttentionQueueItem {
   rank: number;
+  lane: AgentBoardLane;
   sessionId: string;
   client: AgentClient;
   status: SessionStatus;
   title: string;
   directory: string;
+  project: ProjectIdentity;
   lastActiveAt: Date;
   score: number;
   reasons: AttentionReason[];
   recommendedAction: RecommendedAction;
+  canRecover: boolean;
   processRunning: boolean;
+  pid?: number;
   context: AttentionSessionContext;
   intent: AttentionIntent;
   usageCost?: number;
@@ -103,6 +118,7 @@ export interface AttentionOverviewOptions {
   includeOldLost?: boolean;
   lostHours?: number;
   digests?: Map<string, SessionDigest>;
+  ordering?: 'attention' | 'board';
 }
 
 export const DEFAULT_ATTENTION_LIMIT = 20;
@@ -149,7 +165,7 @@ export function buildAttentionOverview(
       staleCutoffMs,
       digest: options.digests?.get(session.sessionId),
     }))
-    .sort(compareAttentionItems)
+    .sort(options.ordering === 'board' ? compareBoardItems : compareAttentionItems)
     .map((item, index) => ({ ...item, rank: index + 1 }));
   const items = rankedItems.slice(0, limit);
 
@@ -237,23 +253,43 @@ function buildAttentionItem(
     });
   }
 
+  const canRecover = session.status === 'lost' && existsSync(session.directory);
+
   return {
     rank: 0,
+    lane: getAgentBoardLane(session.status),
     sessionId: session.sessionId,
     client: session.client,
     status: session.status,
     title: session.title,
     directory: session.directory,
+    project: resolveProjectIdentity(session.directory),
     lastActiveAt: session.lastActiveAt,
     score: getPriorityScore(reasons),
     reasons,
-    recommendedAction: getRecommendedAction(reasons),
+    recommendedAction: getRecommendedAction(reasons, canRecover),
+    canRecover,
     processRunning: session.processRunning,
+    pid: session.pid,
     context: buildSessionContext(session),
-    intent: buildSessionIntent(session, reasons, options.digest),
+    intent: buildSessionIntent(session, reasons, canRecover, options.digest),
     usageCost,
     digest: options.digest ? serializeSessionDigest(options.digest) : undefined,
   };
+}
+
+export function getAgentBoardLane(status: SessionStatus): AgentBoardLane {
+  switch (status) {
+    case 'waiting':
+    case 'lost':
+      return 'needs_you';
+    case 'running':
+      return 'working';
+    case 'completed':
+      return 'finished';
+    case 'idle':
+      return 'paused';
+  }
 }
 
 function getPriorityScore(reasons: AttentionReason[]): number {
@@ -267,9 +303,14 @@ function clampLimit(limit: number | undefined): number {
   return Math.min(Math.floor(limit), MAX_ATTENTION_LIMIT);
 }
 
-function getRecommendedAction(reasons: AttentionReason[]): RecommendedAction {
+function getRecommendedAction(
+  reasons: AttentionReason[],
+  canRecover: boolean
+): RecommendedAction {
   if (reasons.some((reason) => reason.code === 'waiting_for_human')) return 'review';
-  if (reasons.some((reason) => reason.code === 'recoverable_lost')) return 'recover';
+  if (reasons.some((reason) => reason.code === 'recoverable_lost')) {
+    return canRecover ? 'recover' : 'review';
+  }
   if (reasons.some((reason) => reason.code === 'high_cost')) return 'review';
   if (reasons.some((reason) => reason.code === 'stale_activity')) return 'review';
   if (reasons.some((reason) => reason.code === 'idle_activity')) return 'monitor';
@@ -298,16 +339,19 @@ function compactText(value: string | undefined, maxLength: number): string | und
 function buildSessionIntent(
   session: AggregatedSession,
   reasons: AttentionReason[],
+  canRecover: boolean,
   digest?: SessionDigest
 ): AttentionIntent {
   const noiseFlags: AttentionIntentNoiseFlag[] = [];
-  const prompt = compactText(session.initialPrompt, MAX_ATTENTION_CONTEXT_LENGTH);
-  const promptIsNoise = isInstructionNoise(session.initialPrompt);
+  const promptText = stripImageAttachments(session.initialPrompt);
+  const prompt = compactText(promptText, MAX_ATTENTION_CONTEXT_LENGTH);
+  const promptIsNoise = isInstructionNoise(promptText);
   const titleIsNoise = isInstructionNoise(session.title);
-  if (promptIsNoise || titleIsNoise) noiseFlags.push('instructions_heavy');
+  const digestIsNoise = isInstructionNoise(digest?.summary);
+  if (promptIsNoise || titleIsNoise || digestIsNoise) noiseFlags.push('instructions_heavy');
 
-  const promptTask = promptIsNoise ? undefined : intentText(session.initialPrompt);
-  const digestTask = intentText(digest?.summary);
+  const promptTask = promptIsNoise ? undefined : intentText(promptText);
+  const digestTask = digestIsNoise ? undefined : intentText(digest?.summary);
   const titleTask = titleIsNoise ? undefined : intentText(session.title);
   const lastMessage = intentText(session.lastMessage);
   const taskMessage = meaningfulTaskMessage(session.lastMessage);
@@ -347,7 +391,7 @@ function buildSessionIntent(
     task,
     taskSource,
     currentState: firstNonEmpty([lastMessage, digestTask, titleTask]),
-    nextAction: buildNextAction(session, reasons),
+    nextAction: buildNextAction(session, reasons, canRecover),
     whyAttention: buildWhyAttention(reasons),
     confidence,
     noiseFlags: dedupeNoiseFlags(noiseFlags),
@@ -366,14 +410,24 @@ function intentText(value: string | undefined): string | undefined {
 
 function isInstructionNoise(value: string | undefined): boolean {
   if (!value) return false;
-  const lower = value.toLowerCase();
+  const compact = value.trim();
+  const lower = compact.toLowerCase();
+  const withoutAttachments = stripImageAttachments(compact) ?? '';
+  const hasUnclosedImageTag = lower.startsWith('<image ') && !compact.includes('>');
   return lower.includes('agents.md instructions') ||
     lower.startsWith('agents.md') ||
     lower.startsWith('# agents.md') ||
     lower.includes('<instructions>') ||
     lower.includes('vibeguard-start') ||
     lower.includes('vibeguard') ||
-    lower.includes('files called agents.md');
+    lower.includes('files called agents.md') ||
+    hasUnclosedImageTag ||
+    withoutAttachments.length === 0;
+}
+
+function stripImageAttachments(value: string | undefined): string | undefined {
+  const stripped = value?.replace(/<image\b[^>]*>/giu, '').trim();
+  return stripped || undefined;
 }
 
 function meaningfulTaskMessage(value: string | undefined): string | undefined {
@@ -416,8 +470,15 @@ function isLowInformationSentence(sentence: string): boolean {
   return terseFiller || memoryFooter;
 }
 
-function buildNextAction(session: AggregatedSession, reasons: AttentionReason[]): string {
+function buildNextAction(
+  session: AggregatedSession,
+  reasons: AttentionReason[],
+  canRecover: boolean
+): string {
   if (reasons.some((reason) => reason.code === 'recoverable_lost')) {
+    if (!canRecover) {
+      return 'Open details; the original working directory is unavailable.';
+    }
     return session.currentFile
       ? `Recover this session and continue around ${formatPathTail(session.currentFile)}.`
       : 'Recover this session and continue from the current state.';
@@ -463,6 +524,21 @@ function formatPathTail(path: string): string {
 
 function dedupeNoiseFlags(flags: AttentionIntentNoiseFlag[]): AttentionIntentNoiseFlag[] {
   return [...new Set(flags)];
+}
+
+function compareBoardItems(a: AttentionQueueItem, b: AttentionQueueItem): number {
+  const laneComparison = AGENT_BOARD_LANE_ORDER.indexOf(a.lane) -
+    AGENT_BOARD_LANE_ORDER.indexOf(b.lane);
+  if (laneComparison !== 0) return laneComparison;
+
+  if (a.lane === 'needs_you' && a.status !== b.status) {
+    if (a.status === 'waiting') return -1;
+    if (b.status === 'waiting') return 1;
+  }
+
+  const activityComparison = b.lastActiveAt.getTime() - a.lastActiveAt.getTime();
+  if (activityComparison !== 0) return activityComparison;
+  return a.sessionId.localeCompare(b.sessionId);
 }
 
 function compareAttentionItems(a: AttentionQueueItem, b: AttentionQueueItem): number {

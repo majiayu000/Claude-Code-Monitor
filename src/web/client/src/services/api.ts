@@ -324,7 +324,11 @@ export async function fetchWorkItems(
 export async function fetchOrchestratorOverview(
   signal?: AbortSignal
 ): Promise<ApiResponse<OrchestratorOverviewData>> {
-  return request<OrchestratorOverviewData>('/orchestrator/overview', undefined, signal)
+  return request<OrchestratorOverviewData>(
+    '/orchestrator/overview?includeCompleted=true&limit=100',
+    undefined,
+    signal
+  )
 }
 
 export async function createWorkItem(

@@ -64,18 +64,8 @@ export interface KeeplineConfig {
   /** Process cache TTL in milliseconds */
   processCacheTtl: number;
 
-  /** Web terminal configuration */
+  /** Web transport TLS configuration (legacy object name). */
   webTerminal: {
-    /** JWT token expiry in hours */
-    tokenExpiryHours: number;
-    /** Max concurrent PTY sessions */
-    maxSessions: number;
-    /** Scrollback buffer size in bytes */
-    scrollbackSize: number;
-    /** Idle timeout in minutes (0 = disabled) */
-    idleTimeoutMinutes: number;
-    /** Shell command to spawn */
-    shellCommand: string;
     /** TLS certificate path */
     tlsCert: string;
     /** TLS key path */
@@ -101,11 +91,6 @@ const defaultConfig: KeeplineConfig = {
   runningThresholdSeconds: 5,
   processCacheTtl: 3000,
   webTerminal: {
-    tokenExpiryHours: 72,
-    maxSessions: 5,
-    scrollbackSize: 100000,
-    idleTimeoutMinutes: 0,
-    shellCommand: 'claude',
     tlsCert: '',
     tlsKey: '',
   },

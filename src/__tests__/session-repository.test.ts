@@ -40,6 +40,29 @@ describe('Session Repository Upsert', () => {
     expect(updated.toolCount).toBe(2);
   });
 
+  test('persists status provenance and preserves it when omitted', () => {
+    const created = sessionRepository.upsert({
+      sessionId: 'session-status-source',
+      directory: '/tmp/repo',
+      status: 'waiting',
+      statusSource: 'hook',
+    });
+    expect(created.statusSource).toBe('hook');
+
+    const preserved = sessionRepository.upsert({
+      sessionId: 'session-status-source',
+      title: 'Still hook-derived',
+    });
+    expect(preserved.statusSource).toBe('hook');
+
+    const scanned = sessionRepository.upsert({
+      sessionId: 'session-status-source',
+      status: 'idle',
+      statusSource: 'scan',
+    });
+    expect(scanned.statusSource).toBe('scan');
+  });
+
   test('clears pid and tty when explicitly updated to undefined', () => {
     sessionRepository.upsert({
       sessionId: 'session-clear',

@@ -39,3 +39,25 @@
   align-items: center;
   gap: 1rem;
 }
+
+@media (max-width: 700px) {
+  .header {
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding: 0.75rem;
+  }
+
+  .brand {
+    width: 100%;
+  }
+
+  .subtitle {
+    display: none;
+  }
+
+  .actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+}

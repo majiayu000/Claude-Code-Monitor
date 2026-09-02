@@ -46,7 +46,7 @@ async function startDaemonAction(options: DaemonOptions): Promise<void> {
 
   // Install hooks if requested
   if (options.hooks) {
-    console.log(chalk.gray('Installing Claude hooks...'));
+    console.log(chalk.gray('Installing Claude Code and Codex hooks...'));
     installHooks();
   }
 
@@ -65,7 +65,7 @@ async function stopDaemonAction(options: DaemonOptions): Promise<void> {
 
   // Uninstall hooks if requested
   if (options.hooks) {
-    console.log(chalk.gray('Uninstalling Claude hooks...'));
+    console.log(chalk.gray('Uninstalling Claude Code and Codex hooks...'));
     uninstallHooks();
   }
 
@@ -117,12 +117,17 @@ function showStatus(): void {
 
   // Hook status
   console.log(chalk.gray('Hooks:'));
-  if (hookStatus.installed) {
+  if (hookStatus.installation === 'all') {
     console.log(chalk.green('  Installed'));
+  } else if (hookStatus.installation === 'partial') {
+    console.log(chalk.yellow('  Partially installed'));
   } else {
     console.log(chalk.yellow('  Not installed'));
   }
   console.log(chalk.gray(`  Settings: ${hookStatus.settingsPath}`));
+  if (hookStatus.targets.some((target) => target.runtimeId === 'codex' && target.installed)) {
+    console.log(chalk.yellow('  Codex trust: verify approval in Codex'));
+  }
 
   console.log('');
 }

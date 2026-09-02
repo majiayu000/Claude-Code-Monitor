@@ -8,6 +8,7 @@ import { migration010 } from '../infrastructure/database/migrations/010_stash_in
 import { migration011 } from '../infrastructure/database/migrations/011_dispatch_correlation_deadline.js';
 import { migration012 } from '../infrastructure/database/migrations/012_unique_dispatch_session_claim.js';
 import { migration013 } from '../infrastructure/database/migrations/013_session_process_observation.js';
+import { migration014 } from '../infrastructure/database/migrations/014_session_status_source.js';
 import { runAllMigrations } from '../infrastructure/database/migrations/index.js';
 import { execSql } from '../infrastructure/database/sqlite.js';
 import { logger } from '../lib/logger.js';
@@ -25,6 +26,7 @@ const serviceMigrations = [
   migration011,
   migration012,
   migration013,
+  migration014,
 ];
 
 export function runServiceMigrations(): void {
