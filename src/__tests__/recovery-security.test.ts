@@ -12,6 +12,7 @@ import {
   buildClaudeCommand,
   buildClaudeCommandArgs,
   buildRecoveryCommand,
+  buildRecoveryShellCommand,
   RecoveryService,
 } from '../services/recovery.service.js';
 import { scopeCodexSessionId } from '../adapters/codex/parser.js';
@@ -84,6 +85,16 @@ describe('recovery command security', () => {
     ]);
     expect(buildClaudeCommand('resume', 'safe-session-123')).toBe(
       'claude --resume safe-session-123'
+    );
+  });
+
+  test('builds a paste-ready recovery command with a shell-safe cwd', () => {
+    const session = recoverySession({
+      directory: "/tmp/agent's project",
+    });
+
+    expect(buildRecoveryShellCommand(session, 'resume')).toBe(
+      "cd '/tmp/agent'\\''s project' && claude --resume safe-session-123"
     );
   });
 

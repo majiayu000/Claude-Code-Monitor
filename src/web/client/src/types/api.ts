@@ -99,6 +99,7 @@ export interface RecoveryInfo {
   sessionFile?: string
   availableMethods?: RecoveryMethod[]
   recommendedMethod?: RecoveryMethod
+  /** Paste-ready shell command including the working directory. */
   command?: string
 }
 

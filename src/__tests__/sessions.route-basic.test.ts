@@ -178,6 +178,49 @@ describe('Basic Sessions Route Contract', () => {
     });
   });
 
+  test('single session route includes a complete recovery command', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'keepline-recovery-command-'));
+    tmpRoots.push(directory);
+
+    sessionRepository.upsert({
+      sessionId: 'copy-recovery-command-session',
+      client: 'claude',
+      directory,
+      status: 'lost',
+      title: 'Copy recovery command',
+      initialPrompt: 'Recover from the original working directory',
+      lastActiveAt: new Date('2026-04-13T10:00:05.000Z'),
+      toolCount: 0,
+      messageCount: 1,
+    });
+
+    const { token } = await setupUser('recovery-command-route-user', 'password123');
+    const response = await sessions.fetch(new Request(
+      'http://localhost/copy-recovery-command-session',
+      { headers: { Authorization: `Bearer ${token}` } }
+    ));
+
+    expect(response.status).toBe(200);
+
+    const body = await response.json() as {
+      success: boolean;
+      data: {
+        recovery: {
+          canRecover: boolean;
+          recommendedMethod?: string;
+          command?: string;
+        };
+      };
+    };
+
+    expect(body.success).toBe(true);
+    expect(body.data.recovery).toMatchObject({
+      canRecover: true,
+      recommendedMethod: 'continue',
+      command: `cd ${directory} && claude --continue`,
+    });
+  });
+
   test('projectRoot filters sessions by resolved git root exactly', async () => {
     const target = makeGitProject('keepline-target-project-');
     const other = makeGitProject('keepline-other-project-');

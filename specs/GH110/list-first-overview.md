@@ -62,6 +62,10 @@ Scores, cost, and stale warnings do not move cards between lanes.
 - A recoverable lost session uses `Continue in terminal` as its primary action.
   Recovery opens the owning runtime in Warp, iTerm, or Terminal through the
   existing native-terminal recovery service.
+- Recoverable sessions expose `Copy recovery command` in the overflow menu.
+  The copied value comes from the backend recovery builder and includes the
+  complete shell-safe command, not only the runtime session ID. Live sessions
+  do not expose this action because running the command would duplicate them.
 - The web dashboard does not create, attach, display, or own PTYs. Live agents
   remain owned by the terminal or supervisor that launched them; Keepline only
   observes their persisted hook and process state.

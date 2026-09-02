@@ -6,7 +6,7 @@
 
 import { Hono } from 'hono';
 import { getAllSessions, completeSession } from '../../../services/session.service.js';
-import { buildRecoveryCommand, recoverSession, getRecoveryInfo } from '../../../services/recovery.service.js';
+import { buildRecoveryShellCommand, recoverSession, getRecoveryInfo } from '../../../services/recovery.service.js';
 import { stopProcess, isProcessRunning } from '../../../adapters/process/scanner.js';
 import { logger } from '../../../lib/logger.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -78,7 +78,7 @@ app.post('/:id/recover', async (c) => {
         method: result.method,
         command: result.success
           ? undefined
-          : buildRecoveryCommand(session, recoveryMethod, skipPermissions),
+          : buildRecoveryShellCommand(session, recoveryMethod, skipPermissions),
       },
     });
   } catch (error) {

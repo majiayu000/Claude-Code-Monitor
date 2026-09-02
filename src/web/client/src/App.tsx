@@ -10,6 +10,7 @@ import { AuthLogin } from '@/components/AuthLogin'
 import type { TabId } from '@/components/TabNav'
 import type { ProjectInfo, RuntimeFilter, SessionStatus } from '@/types'
 import { useAuth, useSessions, useKeyboardShortcuts, useNotifications, useProjects } from '@/hooks'
+import { fetchSession } from '@/services/api'
 
 const SessionList = lazy(() => import('@/components/SessionList').then(m => ({ default: m.SessionList })))
 const UsagePanel = lazy(() => import('@/components/UsagePanel').then(m => ({ default: m.UsagePanel })))
@@ -170,12 +171,19 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
     setExpandedSessionId(null)
   }, [])
 
-  const handleCopySessionId = useCallback(async (sessionId: string) => {
+  const handleCopyRecoveryCommand = useCallback(async (sessionId: string) => {
     try {
-      await navigator.clipboard.writeText(sessionId)
-      showToast('Session ID copied', 'success')
+      const response = await fetchSession(sessionId)
+      const command = response.data?.recovery.command
+      if (!response.success || !command) {
+        showToast(response.error || 'Recovery command is not available', 'error')
+        return
+      }
+
+      await navigator.clipboard.writeText(command)
+      showToast('Recovery command copied', 'success')
     } catch {
-      showToast('Failed to copy session ID', 'error')
+      showToast('Failed to copy recovery command', 'error')
     }
   }, [showToast])
 
@@ -271,7 +279,7 @@ function DashboardApp({ token, onLogout }: DashboardAppProps) {
             onRecover={handleRecover}
             onStop={handleStop}
             onComplete={handleComplete}
-            onCopySessionId={handleCopySessionId}
+            onCopyRecoveryCommand={handleCopyRecoveryCommand}
           />
         )}
 

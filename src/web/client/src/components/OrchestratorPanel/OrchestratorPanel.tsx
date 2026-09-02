@@ -25,7 +25,7 @@ interface OrchestratorPanelProps {
   onRecover?: (sessionId: string) => void | Promise<void>
   onStop?: (sessionId: string) => void | Promise<void>
   onComplete?: (sessionId: string) => void | Promise<void>
-  onCopySessionId?: (sessionId: string) => void | Promise<void>
+  onCopyRecoveryCommand?: (sessionId: string) => void | Promise<void>
 }
 
 export const OrchestratorPanel = memo(function OrchestratorPanel({
@@ -34,7 +34,7 @@ export const OrchestratorPanel = memo(function OrchestratorPanel({
   onRecover,
   onStop,
   onComplete,
-  onCopySessionId,
+  onCopyRecoveryCommand,
 }: OrchestratorPanelProps) {
   const { overview, loading, error, refresh } = useOrchestratorOverview(token)
   const stats = overview?.stats ?? {
@@ -118,7 +118,7 @@ export const OrchestratorPanel = memo(function OrchestratorPanel({
                       onRecover={onRecover}
                       onStop={onStop}
                       onComplete={onComplete}
-                      onCopySessionId={onCopySessionId}
+                      onCopyRecoveryCommand={onCopyRecoveryCommand}
                       onActionComplete={refresh}
                     />
                   ))}

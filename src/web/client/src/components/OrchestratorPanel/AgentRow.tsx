@@ -10,7 +10,7 @@ interface AgentRowProps {
   onRecover?: (sessionId: string) => void | Promise<void>
   onStop?: (sessionId: string) => void | Promise<void>
   onComplete?: (sessionId: string) => void | Promise<void>
-  onCopySessionId?: (sessionId: string) => void | Promise<void>
+  onCopyRecoveryCommand?: (sessionId: string) => void | Promise<void>
   onActionComplete?: () => void | Promise<void>
 }
 
@@ -28,7 +28,7 @@ export function AgentRow({
   onRecover,
   onStop,
   onComplete,
-  onCopySessionId,
+  onCopyRecoveryCommand,
   onActionComplete,
 }: AgentRowProps) {
   const runtimeLabel = item.client === 'codex' ? 'Codex' : 'Claude Code'
@@ -66,7 +66,7 @@ export function AgentRow({
           onRecover={onRecover}
           onStop={onStop}
           onComplete={onComplete}
-          onCopySessionId={onCopySessionId}
+          onCopyRecoveryCommand={onCopyRecoveryCommand}
           onActionComplete={onActionComplete}
         />
       </div>
@@ -80,7 +80,7 @@ function RowActions({
   onRecover,
   onStop,
   onComplete,
-  onCopySessionId,
+  onCopyRecoveryCommand,
   onActionComplete,
 }: AgentRowProps) {
   const canRecover = item.recommendedAction === 'recover' && onRecover
@@ -103,7 +103,7 @@ function RowActions({
           {canRecover ? 'Continue in terminal' : 'Open'}
         </button>
       )}
-      {(onOpenSession || canStop || canComplete || onCopySessionId) && (
+      {(onOpenSession || canStop || canComplete || (canRecover && onCopyRecoveryCommand)) && (
         <details className={styles.actionMenu}>
           <summary aria-label={`More actions for ${taskIdentity(item)}`}>•••</summary>
           <div className={styles.actionMenuList}>
@@ -127,12 +127,12 @@ function RowActions({
                 Mark finished
               </button>
             )}
-            {onCopySessionId && (
+            {canRecover && onCopyRecoveryCommand && (
               <button
                 type="button"
-                onClick={() => void runAction(() => onCopySessionId(item.sessionId))}
+                onClick={() => void runAction(() => onCopyRecoveryCommand(item.sessionId))}
               >
-                Copy session ID
+                Copy recovery command
               </button>
             )}
           </div>
