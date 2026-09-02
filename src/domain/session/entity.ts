@@ -174,6 +174,17 @@ export function generateTitle(prompt: string): string {
   return summarizePrompt(prompt);
 }
 
+/** Identify placeholder titles that may be replaced by the first real prompt. */
+export function isGeneratedSessionTitle(title: string): boolean {
+  return title === 'Unknown task' ||
+    /^继续[。.!！]?$/.test(title) ||
+    /^<recommended_plugins(?:\s|>)/i.test(title) ||
+    /^<environment_context(?:\s|>)/i.test(title) ||
+    /^#\s*AGENTS\.md instructions for(?:\s|$)/i.test(title) ||
+    /^AGENTS\.md: [^\n]+$/i.test(title) ||
+    /^AGENTS\.md instructions$/i.test(title);
+}
+
 /** Extract a user-authored task from Codex/Claude context wrapper messages. */
 export function extractTaskPrompt(prompt: string): string | undefined {
   const trimmed = prompt.trim();

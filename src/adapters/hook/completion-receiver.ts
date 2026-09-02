@@ -7,7 +7,13 @@ import { taskDispatchRepository } from '../../infrastructure/database/repositori
 import { emit } from '../../lib/events.js';
 import { logger } from '../../lib/logger.js';
 import { isValidSessionId } from '../../lib/session-id.js';
-import { generateTitle, type AgentClient, type SessionStatus } from '../../domain/session/index.js';
+import {
+  generateTitle,
+  isGeneratedSessionTitle,
+  type AgentClient,
+  type SessionStatus,
+} from '../../domain/session/index.js';
+import { scopeCodexSessionId } from '../codex/parser.js';
 import {
   isAllowedFetchMetadata,
   isAllowedRequestHost,
@@ -210,6 +216,9 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
         if (runtimeHint === null || typeof body.cwd !== 'string' || body.cwd.length === 0) {
           return json({ success: false, error: 'Invalid hook event payload' }, 400);
         }
+        const sessionId = runtimeHint === 'codex'
+          ? scopeCodexSessionId(body.session_id)
+          : body.session_id;
 
         const eventTimestamp = typeof body.timestamp === 'string'
           ? new Date(body.timestamp)
@@ -217,18 +226,18 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
         if (Number.isNaN(eventTimestamp.getTime())) {
           return json({ success: false, error: 'Invalid hook event timestamp' }, 400);
         }
-        let existing = sessionRepository.findBySessionId(body.session_id);
+        let existing = sessionRepository.findBySessionId(sessionId);
         if (!existing) {
           if (eventType === 'Stop') {
             if (recordCompletionClaim(
-              body.session_id,
+              sessionId,
               body.cwd,
               body.last_assistant_message,
               eventTimestamp,
               false
             ) === 'pending') {
               emit('session:turn-ended', {
-                sessionId: body.session_id,
+                sessionId,
                 timestamp: eventTimestamp,
               });
               return json({ success: true, pending: true }, 202);
@@ -241,7 +250,7 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
             ? body.prompt
             : 'Unknown task';
           existing = sessionRepository.upsert({
-            sessionId: body.session_id,
+            sessionId,
             client: runtimeHint ?? 'claude',
             directory: body.cwd,
             status,
@@ -262,11 +271,18 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
         const status = observedStatus(eventType);
         if (status && existing.status !== 'completed') {
           const previousStatus = existing.status;
+          const prompt = eventType === 'UserPromptSubmit' && typeof body.prompt === 'string'
+            ? body.prompt
+            : undefined;
           const session = sessionRepository.upsert({
-            sessionId: body.session_id,
+            sessionId,
             status,
             lastActiveAt: new Date(),
             ...(typeof body.tool_name === 'string' && { lastTool: body.tool_name }),
+            ...(prompt && isGeneratedSessionTitle(existing.title) && {
+              title: generateTitle(prompt),
+              initialPrompt: prompt,
+            }),
           });
           if (previousStatus !== session.status) {
             emit('session:updated', { session, previousStatus });
@@ -278,7 +294,7 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
           // A completion suggestion requires a separate exact claim tied to an accepted link.
           if (existing.client === 'claude') {
             recordCompletionClaim(
-              body.session_id,
+              sessionId,
               body.cwd,
               body.last_assistant_message,
               eventTimestamp,
@@ -286,7 +302,7 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
             );
           }
           emit('session:turn-ended', {
-            sessionId: body.session_id,
+            sessionId,
             timestamp: eventTimestamp,
             reason: typeof body.stop_reason === 'string'
               ? body.stop_reason

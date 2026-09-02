@@ -14,7 +14,11 @@ export type {
   SessionStats,
 } from './entity.js';
 
-export { extractTaskPrompt, generateTitle } from './entity.js';
+export {
+  extractTaskPrompt,
+  generateTitle,
+  isGeneratedSessionTitle,
+} from './entity.js';
 
 // Value objects
 export type {

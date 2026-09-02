@@ -17,6 +17,7 @@ import {
 } from '../adapters/process/detector.js';
 import type { ClaudeProcessInfo } from '../adapters/process/types.js';
 import type { SessionStatus } from '../domain/session/index.js';
+import { resolveAggregatedStatus } from '../services/session.aggregator.js';
 
 // ============================================================================
 // Test Data: Real process info structures (not mocks)
@@ -47,6 +48,13 @@ function secondsAgo(seconds: number): Date {
 // ============================================================================
 
 describe('Session Status Detection', () => {
+  test('preserves a hook-derived waiting state while its process is alive', () => {
+    expect(resolveAggregatedStatus(
+      { status: 'waiting', lastActiveAt: new Date() },
+      processInfo({ cpu: 10 })
+    )).toBe('waiting');
+  });
+
   describe('when process is not running', () => {
     test('status is "lost" - session terminated unexpectedly', () => {
       const status = detectSessionStatus(null);

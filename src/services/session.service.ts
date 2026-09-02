@@ -6,7 +6,7 @@
  */
 
 import type { Session } from '../domain/session/index.js';
-import { generateTitle } from '../domain/session/index.js';
+import { generateTitle, isGeneratedSessionTitle } from '../domain/session/index.js';
 import type { ISessionRepository } from '../domain/session/repository.js';
 import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 import { emit } from '../lib/events.js';
@@ -40,16 +40,6 @@ export interface SyncOptions {
 export interface RuntimeSessionScan<T> {
   sessions: T[];
   failures: RuntimeScanFailure[];
-}
-
-function isGeneratedContextTitle(title: string): boolean {
-  return title === 'Unknown task' ||
-    /^继续[。.!！]?$/.test(title) ||
-    /^<recommended_plugins(?:\s|>)/i.test(title) ||
-    /^<environment_context(?:\s|>)/i.test(title) ||
-    /^#\s*AGENTS\.md instructions for(?:\s|$)/i.test(title) ||
-    /^AGENTS\.md: [^\n]+$/i.test(title) ||
-    /^AGENTS\.md instructions$/i.test(title);
 }
 
 export async function scanRuntimeSessions<T>(
@@ -249,7 +239,7 @@ export class SessionService {
 
           // Replace only generated context noise; preserve normal and user-edited titles.
           const shouldUpdateTitle =
-            isGeneratedContextTitle(existing.title) &&
+            isGeneratedSessionTitle(existing.title) &&
             agentSession.firstMessage &&
             agentSession.firstMessage !== 'Unknown task';
 

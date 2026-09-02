@@ -24,6 +24,7 @@ export interface CreateSessionInput {
 export interface UpdateSessionInput {
   status?: SessionStatus;
   title?: string;
+  initialPrompt?: string;
   lastTool?: string;
   lastToolInput?: string;
   currentFile?: string;

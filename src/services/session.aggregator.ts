@@ -9,6 +9,7 @@ import type { ISessionRepository } from '../domain/session/repository.js';
 import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 import { getCachedProcesses } from '../adapters/process/scanner.js';
 import { detectSessionStatus } from '../adapters/process/detector.js';
+import type { ClaudeProcessInfo } from '../adapters/process/types.js';
 import type {
   AggregatedSession,
   BasicAggregatedSession,
@@ -16,6 +17,17 @@ import type {
   SessionSort,
 } from './session.types.js';
 import { matchProcessesToSessions } from './session.process-matcher.js';
+
+export function resolveAggregatedStatus(
+  session: Pick<AggregatedSession, 'status' | 'lastActiveAt'>,
+  process: ClaudeProcessInfo | undefined
+): SessionStatus {
+  if (session.status === 'completed') return 'completed';
+  if (process && (session.status === 'running' || session.status === 'waiting')) {
+    return session.status;
+  }
+  return detectSessionStatus(process ?? null, session.lastActiveAt);
+}
 
 export class SessionAggregator {
   constructor(private readonly repository: ISessionRepository) {}
@@ -28,12 +40,12 @@ export class SessionAggregator {
 
     return sessions.map((session) => {
       const process = processMatches.get(session.sessionId);
-      const liveStatus = detectSessionStatus(process || null, session.lastActiveAt);
+      const liveStatus = resolveAggregatedStatus(session, process);
 
       return {
         ...session,
         // Update status based on live process info
-        status: session.status === 'completed' ? 'completed' : liveStatus,
+        status: liveStatus,
         processRunning: !!process,
         cpuUsage: process?.cpu,
         memoryUsage: process?.memory,
@@ -49,11 +61,11 @@ export class SessionAggregator {
 
     return sessions.map((session) => {
       const process = processMatches.get(session.sessionId);
-      const liveStatus = detectSessionStatus(process || null, session.lastActiveAt);
+      const liveStatus = resolveAggregatedStatus(session, process);
 
       return {
         ...session,
-        status: session.status === 'completed' ? 'completed' : liveStatus,
+        status: liveStatus,
         processRunning: !!process,
         cpuUsage: process?.cpu,
         memoryUsage: process?.memory,

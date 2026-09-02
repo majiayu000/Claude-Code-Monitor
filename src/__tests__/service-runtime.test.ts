@@ -11,6 +11,7 @@ import { workItemRepository } from '../infrastructure/database/repositories/work
 import { getDatabase } from '../infrastructure/database/sqlite.js';
 import { taskDispatchRepository } from '../infrastructure/database/repositories/task-dispatch.repository.js';
 import { reconcileLinkedAgentSessions } from '../services/work-item-session-reconciler.js';
+import { scopeCodexSessionId } from '../adapters/codex/parser.js';
 
 const SCAN_RESULT_PREFIX = '__KEEPLINE_SERVICE_SCAN__';
 let liveService: KeeplineService | undefined;
@@ -200,20 +201,32 @@ describe('service runtime isolation', () => {
 
     expect((await postStop({ session_id: 'unknown-stop-session' })).status).toBe(404);
     expect((await postStop({ cwd: '/tmp/wrong-project' })).status).toBe(409);
+    const codexStopRawId = '019d0b7e-6a75-7cb0-b4fa-41f927bf13c1';
+    const codexStopSessionId = scopeCodexSessionId(codexStopRawId);
     sessionRepository.upsert({
-      sessionId: 'codex-stop-session',
+      sessionId: codexStopSessionId,
       client: 'codex',
       directory: '/tmp/codex-stop',
       status: 'running',
     });
-    expect((await postStop({
-      session_id: 'codex-stop-session',
-      cwd: '/tmp/codex-stop',
-    })).status).toBe(200);
-    expect(sessionRepository.findBySessionId('codex-stop-session')).toMatchObject({
+    const codexStopResponse = await fetch(
+      `http://127.0.0.1:${liveService.hookPort}/hook?runtime=codex`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          hook_event_name: 'Stop',
+          session_id: codexStopRawId,
+          cwd: '/tmp/codex-stop',
+        }),
+      }
+    );
+    expect(codexStopResponse.status).toBe(200);
+    expect(sessionRepository.findBySessionId(codexStopSessionId)).toMatchObject({
       client: 'codex',
       status: 'waiting',
     });
+    expect(sessionRepository.findBySessionId(codexStopRawId)).toBeNull();
 
     const response = await postStop({ stop_reason: 'completed' });
 
@@ -239,7 +252,8 @@ describe('service runtime isolation', () => {
     expect(promptResponse.status).toBe(200);
     expect(sessionRepository.findBySessionId(sessionId)?.status).toBe('running');
 
-    const codexStartId = 'codex-hook-start-session';
+    const codexStartRawId = '019d0b7e-6a75-7cb0-b4fa-41f927bf13c2';
+    const codexStartSessionId = scopeCodexSessionId(codexStartRawId);
     const codexStartResponse = await fetch(
       `http://127.0.0.1:${liveService.hookPort}/hook?runtime=codex`,
       {
@@ -247,16 +261,37 @@ describe('service runtime isolation', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           hook_event_name: 'SessionStart',
-          session_id: codexStartId,
+          session_id: codexStartRawId,
           cwd: '/tmp/codex-hook-start',
         }),
       }
     );
     expect(codexStartResponse.status).toBe(200);
-    expect(sessionRepository.findBySessionId(codexStartId)).toMatchObject({
+    expect(sessionRepository.findBySessionId(codexStartSessionId)).toMatchObject({
       client: 'codex',
       status: 'running',
       directory: '/tmp/codex-hook-start',
+      title: 'Unknown task',
+    });
+    expect(sessionRepository.findBySessionId(codexStartRawId)).toBeNull();
+
+    const codexPromptResponse = await fetch(
+      `http://127.0.0.1:${liveService.hookPort}/hook?runtime=codex`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          hook_event_name: 'UserPromptSubmit',
+          session_id: codexStartRawId,
+          cwd: '/tmp/codex-hook-start',
+          prompt: 'Fix the login button',
+        }),
+      }
+    );
+    expect(codexPromptResponse.status).toBe(200);
+    expect(sessionRepository.findBySessionId(codexStartSessionId)).toMatchObject({
+      initialPrompt: 'Fix the login button',
+      title: 'Fix the login button',
     });
     expect((await postStop({ timestamp: '2026-08-30T10:06:00.000Z' })).status).toBe(200);
     expect(sessionRepository.findBySessionId(sessionId)?.completedAt).toBeUndefined();
