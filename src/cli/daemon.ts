@@ -123,6 +123,9 @@ function showStatus(): void {
     console.log(chalk.yellow('  Not installed'));
   }
   console.log(chalk.gray(`  Settings: ${hookStatus.settingsPath}`));
+  if (hookStatus.targets.some((target) => target.runtimeId === 'codex' && target.installed)) {
+    console.log(chalk.yellow('  Codex trust: verify approval in Codex'));
+  }
 
   console.log('');
 }

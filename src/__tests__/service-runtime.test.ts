@@ -169,6 +169,12 @@ describe('service runtime isolation', () => {
     expect(claudeCapabilities).toContain('agent-completion-claim-hook-unconfigured');
     expect(claudeCapabilities).not.toContain('explicit-completion-hook');
     expect(claudeCapabilities).toContain('explicit-completion-manual-only');
+    const codexCapabilities = metadata.data.runtimes.find(
+      (runtime) => runtime.id === 'codex'
+    )?.capabilities;
+    expect(codexCapabilities).toContain('hooks');
+    expect(codexCapabilities).toContain('session-lifecycle-hook-unconfigured');
+    expect(codexCapabilities).toContain('agent-completion-claim-hook-unconfigured');
 
     const sessionId = 'service-stop-session';
     sessionRepository.upsert({

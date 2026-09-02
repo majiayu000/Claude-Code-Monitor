@@ -57,6 +57,10 @@ export async function statusCommand(): Promise<void> {
   if (hooks.degraded) {
     console.log(`  Status:    ${chalk.yellow('Degraded - run keepline daemon start to receive hook events')}`);
   }
+  const codexHooks = hooks.targets.find((target) => target.runtimeId === 'codex');
+  if (codexHooks?.installed) {
+    console.log(`  Codex trust: ${chalk.yellow('Runtime-managed - verify approval in Codex')}`);
+  }
   console.log('');
 
   // Configuration

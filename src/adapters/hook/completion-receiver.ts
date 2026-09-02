@@ -6,14 +6,13 @@ import { workItemRepository } from '../../infrastructure/database/repositories/w
 import { taskDispatchRepository } from '../../infrastructure/database/repositories/task-dispatch.repository.js';
 import { emit } from '../../lib/events.js';
 import { logger } from '../../lib/logger.js';
-import { isValidSessionId } from '../../lib/session-id.js';
+import { isValidSessionId, scopeCodexSessionId } from '../../lib/session-id.js';
 import {
   generateTitle,
   isGeneratedSessionTitle,
   type AgentClient,
   type SessionStatus,
 } from '../../domain/session/index.js';
-import { scopeCodexSessionId } from '../codex/parser.js';
 import {
   isAllowedFetchMetadata,
   isAllowedRequestHost,
@@ -182,7 +181,7 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
       }
       const url = new URL(request.url);
       if (request.method === 'GET' && url.pathname === '/health') {
-        return json({ status: 'ok', mode: 'lifecycle-only' });
+        return json({ status: 'ok', service: 'keepline-hook-receiver', mode: 'lifecycle-only' });
       }
       if (request.method !== 'POST' || url.pathname !== '/hook') {
         return json({ success: false, error: 'Not found' }, 404);

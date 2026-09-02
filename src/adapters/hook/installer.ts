@@ -10,7 +10,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
-import { CLAUDE_SETTINGS, CODEX_HOOKS } from '../../lib/paths.js';
+import { CLAUDE_SETTINGS, getCodexHooksPath } from '../../lib/paths.js';
 import { config } from '../../lib/config.js';
 import { logger } from '../../lib/logger.js';
 import type {
@@ -49,10 +49,12 @@ interface HookTarget {
   hookTypes: HookEventType[];
 }
 
-const HOOK_TARGETS: HookTarget[] = [
-  { runtimeId: 'claude-code', settingsPath: CLAUDE_SETTINGS, hookTypes: CLAUDE_HOOK_TYPES },
-  { runtimeId: 'codex', settingsPath: CODEX_HOOKS, hookTypes: CODEX_HOOK_TYPES },
-];
+function getHookTargets(): HookTarget[] {
+  return [
+    { runtimeId: 'claude-code', settingsPath: CLAUDE_SETTINGS, hookTypes: CLAUDE_HOOK_TYPES },
+    { runtimeId: 'codex', settingsPath: getCodexHooksPath(), hookTypes: CODEX_HOOK_TYPES },
+  ];
+}
 
 /** Read one runtime's hook settings. */
 function getHookSettings(settingsPath: string): ClaudeSettings {
@@ -257,17 +259,22 @@ export function hasCurrentLifecycleHook(
   }) ?? false;
 }
 
-/** Check whether Claude Stop events target the running lifecycle receiver. */
-export function isLifecycleHookInstalled(port: number = config.get().hookPort): boolean {
+/** Check whether one runtime's Stop events target the running lifecycle receiver. */
+export function isLifecycleHookInstalled(
+  port: number = config.get().hookPort,
+  runtimeId: string = 'claude-code'
+): boolean {
+  const target = getHookTargets().find((candidate) => candidate.runtimeId === runtimeId);
+  if (!target) return false;
   return hasCurrentLifecycleHook(
-    getHookSettings(CLAUDE_SETTINGS),
-    getHookCommand(port, 'claude-code')
+    getHookSettings(target.settingsPath),
+    getHookCommand(port, target.runtimeId)
   );
 }
 
 /** Check if keepline hooks are installed */
 export function areHooksInstalled(): boolean {
-  return HOOK_TARGETS.every((target) => hasKeeplineHook(
+  return getHookTargets().every((target) => hasKeeplineHook(
     getHookSettings(target.settingsPath),
     target.hookTypes
   ));
@@ -275,7 +282,7 @@ export function areHooksInstalled(): boolean {
 
 /** Install Keepline hooks into Claude Code and Codex settings. */
 export function installHooks(): void {
-  const targets = HOOK_TARGETS.map((target) => ({
+  const targets = getHookTargets().map((target) => ({
     ...target,
     settings: getHookSettings(target.settingsPath),
   }));
@@ -288,6 +295,9 @@ export function installHooks(): void {
     if (changed) {
       saveHookSettings(target.settingsPath, target.settings);
       logger.info(`Keepline ${target.runtimeId} hooks installed`);
+      if (target.runtimeId === 'codex') {
+        logger.warn('Codex must approve newly installed hooks before they run; verify hook trust in Codex');
+      }
     } else {
       logger.debug(`Keepline ${target.runtimeId} hooks already installed`);
     }
@@ -296,7 +306,7 @@ export function installHooks(): void {
 
 /** Uninstall only Keepline-owned hooks from Claude Code and Codex settings. */
 export function uninstallHooks(): void {
-  const targets = HOOK_TARGETS.map((target) => ({
+  const targets = getHookTargets().map((target) => ({
     ...target,
     settings: getHookSettings(target.settingsPath),
   }));
@@ -316,12 +326,18 @@ export function getHookStatus(): {
   installed: boolean;
   settingsPath: string;
   hookCommand: string;
-  targets: Array<{ runtimeId: HookRuntimeId; installed: boolean; settingsPath: string }>;
+  targets: Array<{
+    runtimeId: HookRuntimeId;
+    installed: boolean;
+    settingsPath: string;
+    trustStatus: 'not-required' | 'runtime-managed';
+  }>;
 } {
-  const targets = HOOK_TARGETS.map((target) => ({
+  const targets = getHookTargets().map((target) => ({
     runtimeId: target.runtimeId,
     installed: hasKeeplineHook(getHookSettings(target.settingsPath), target.hookTypes),
     settingsPath: target.settingsPath,
+    trustStatus: target.runtimeId === 'codex' ? 'runtime-managed' as const : 'not-required' as const,
   }));
   return {
     installed: targets.every((target) => target.installed),

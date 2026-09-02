@@ -10,6 +10,12 @@ export interface HookAvailability {
   settingsPath: string;
   hookCommand: string;
   hookServerUrl: string;
+  targets: Array<{
+    runtimeId: 'claude-code' | 'codex';
+    installed: boolean;
+    settingsPath: string;
+    trustStatus: 'not-required' | 'runtime-managed';
+  }>;
 }
 
 export function buildHookAvailability(input: {
@@ -18,14 +24,24 @@ export function buildHookAvailability(input: {
   settingsPath: string;
   hookCommand: string;
   hookServerUrl: string;
+  targets?: HookAvailability['targets'];
 }): HookAvailability {
   return {
     ...input,
+    targets: input.targets ?? [],
     degraded: input.installed && !input.receiverRunning,
   };
 }
 
 export type HookHealthProbe = (url: string, timeoutMs: number) => Promise<boolean>;
+
+export function isKeeplineHookHealth(payload: unknown): boolean {
+  return Boolean(
+    payload &&
+    typeof payload === 'object' &&
+    (payload as { service?: unknown }).service === 'keepline-hook-receiver'
+  );
+}
 
 async function probeHookHealth(url: string, timeoutMs: number): Promise<boolean> {
   const controller = new AbortController();
@@ -35,7 +51,8 @@ async function probeHookHealth(url: string, timeoutMs: number): Promise<boolean>
     const response = await fetch(`${url}/health`, {
       signal: controller.signal,
     });
-    return response.ok;
+    if (!response.ok) return false;
+    return isKeeplineHookHealth(await response.json());
   } catch (error) {
     logger.debug('Hook receiver health probe failed', error);
     return false;
@@ -72,5 +89,6 @@ export async function getHookAvailability(): Promise<HookAvailability> {
     settingsPath: status.settingsPath,
     hookCommand: status.hookCommand,
     hookServerUrl,
+    targets: status.targets,
   });
 }

@@ -375,6 +375,7 @@ export function createHookServer(): FastifyInstance {
     const queue = getCompressionQueue();
     return {
       status: 'ok',
+      service: 'keepline-hook-receiver',
       compression: {
         active: queue.isActive(),
         stats: queue.getStats(),

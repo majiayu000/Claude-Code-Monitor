@@ -30,9 +30,10 @@ app.get('/health', (c) => c.json({
 }));
 
 app.get('/meta', (c) => {
-  const lifecycleHookConfigured = localServiceState.lifecycleHook.receiverRunning &&
-    localServiceState.lifecycleHook.port !== undefined &&
-    isLifecycleHookInstalled(localServiceState.lifecycleHook.port);
+  const hookConfigured = (runtimeId: string) =>
+    localServiceState.lifecycleHook.receiverRunning &&
+      localServiceState.lifecycleHook.port !== undefined &&
+      isLifecycleHookInstalled(localServiceState.lifecycleHook.port, runtimeId);
   return c.json({ success: true, data: {
     apiVersion: '1.0',
     serviceVersion: '1.0.0',
@@ -50,23 +51,25 @@ app.get('/meta', (c) => {
       'dispatch.codex',
       'dispatch.claude-code',
     ],
-    runtimes: LOCAL_API_RUNTIME_DESCRIPTORS.map((descriptor) => ({
-      ...descriptor,
-      capabilities: [
-        ...descriptor.capabilities,
-        'explicit-completion-manual-only',
-        descriptor.id === 'claude-code'
-          ? lifecycleHookConfigured
+    runtimes: LOCAL_API_RUNTIME_DESCRIPTORS.map((descriptor) => {
+      const lifecycleHookConfigured = hookConfigured(descriptor.id);
+      return {
+        ...descriptor,
+        capabilities: [
+          ...descriptor.capabilities,
+          'explicit-completion-manual-only',
+          lifecycleHookConfigured
             ? 'session-lifecycle-hook'
-            : 'session-lifecycle-hook-unconfigured'
-          : 'session-lifecycle-manual-only',
-        descriptor.id === 'claude-code'
-          ? lifecycleHookConfigured
+            : 'session-lifecycle-hook-unconfigured',
+          lifecycleHookConfigured
             ? 'agent-completion-claim-hook'
-            : 'agent-completion-claim-hook-unconfigured'
-          : 'agent-completion-claim-manual-only',
-      ],
-    })),
+            : 'agent-completion-claim-hook-unconfigured',
+          ...(descriptor.id === 'codex' && lifecycleHookConfigured
+            ? ['hook-trust-runtime-managed']
+            : []),
+        ],
+      };
+    }),
   }});
 });
 

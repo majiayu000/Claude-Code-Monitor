@@ -45,6 +45,11 @@ export const CODEX_SESSIONS = join(CODEX_HOME, 'sessions');
 /** Codex lifecycle hooks file */
 export const CODEX_HOOKS = join(CODEX_HOME, 'hooks.json');
 
+/** Resolve Codex hooks from the active CODEX_HOME override. */
+export function getCodexHooksPath(): string {
+  return join(process.env.CODEX_HOME || CODEX_HOME, 'hooks.json');
+}
+
 /**
  * Resolve the Keepline data directory from the current environment.
  *

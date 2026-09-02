@@ -7,6 +7,7 @@ import {
 } from '../adapters/hook/server.js';
 import {
   buildHookAvailability,
+  isKeeplineHookHealth,
   isHookReceiverRunning,
 } from '../adapters/hook/availability.js';
 
@@ -168,7 +169,10 @@ describe('hook server request security', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ status: 'ok' });
+    expect(response.json()).toMatchObject({
+      status: 'ok',
+      service: 'keepline-hook-receiver',
+    });
   });
 
   test('allows loopback hook requests to reach payload validation', async () => {
@@ -207,6 +211,12 @@ describe('hook server request security', () => {
 });
 
 describe('hook availability status', () => {
+  test('accepts only health responses from the Keepline hook receiver', () => {
+    expect(isKeeplineHookHealth({ status: 'ok', service: 'keepline-hook-receiver' })).toBe(true);
+    expect(isKeeplineHookHealth({ status: 'ok' })).toBe(false);
+    expect(isKeeplineHookHealth('ok')).toBe(false);
+  });
+
   test('treats a daemon-owned healthy receiver as running outside the daemon process', async () => {
     const calls: Array<{ url: string; timeoutMs: number }> = [];
 

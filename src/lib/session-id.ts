@@ -15,3 +15,11 @@ export function assertValidSessionId(id: unknown): asserts id is string {
     throw new Error('Invalid session ID format');
   }
 }
+
+export function scopeCodexSessionId(rawSessionId: string): string {
+  return rawSessionId.startsWith('codex_') ? rawSessionId : `codex_${rawSessionId}`;
+}
+
+export function unscopeCodexSessionId(sessionId: string): string {
+  return sessionId.startsWith('codex_') ? sessionId.slice('codex_'.length) : sessionId;
+}

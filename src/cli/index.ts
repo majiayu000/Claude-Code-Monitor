@@ -96,6 +96,9 @@ export function registerCommands(program: Command): void {
           if (status.degraded) {
             console.log(chalk.yellow('Hooks are installed but no hook receiver is running. Start keepline daemon to receive hook events.'));
           }
+          if (status.targets.some((target) => target.runtimeId === 'codex' && target.installed)) {
+            console.log(chalk.yellow('Codex hook trust is runtime-managed; verify these hooks are approved in Codex.'));
+          }
           console.log(`Settings path: ${status.settingsPath}`);
           break;
         }

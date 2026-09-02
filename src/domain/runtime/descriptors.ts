@@ -23,9 +23,10 @@ export const CODEX_DESCRIPTOR: RuntimeDescriptor = {
   kind: 'cli',
   executableNames: ['codex'],
   sessionPathHints: ['~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl'],
-  capabilities: ['session-history', 'process-scan', 'resume', 'quota'],
+  capabilities: ['session-history', 'process-scan', 'resume', 'quota', 'hooks'],
   compatibilityRoutes: {
     quota: ['/api/codex/quota'],
+    hooks: ['keepline hooks install', 'keepline hooks status'],
   },
 };
 
