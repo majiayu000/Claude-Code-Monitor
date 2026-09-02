@@ -9,6 +9,7 @@ import type { Session, SessionListItem } from './entity.js';
 import type {
   AgentClient,
   SessionStatus,
+  SessionStatusSource,
   ToolCallInfo,
   SessionUsageStats,
 } from './value-objects.js';
@@ -24,6 +25,7 @@ export interface ExistingSessionSummary {
   sessionId: string;
   client: AgentClient;
   status: SessionStatus;
+  statusSource: SessionStatusSource;
   title: string;
   lastActiveAt: Date;
 }
@@ -34,6 +36,7 @@ export interface SessionUpsertData {
   client?: AgentClient;
   directory?: string;
   status?: SessionStatus;
+  statusSource?: SessionStatusSource;
   title?: string;
   initialPrompt?: string;
   lastTool?: string;

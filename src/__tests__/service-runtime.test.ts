@@ -480,7 +480,7 @@ describe('service runtime isolation', () => {
       /(?:memory|pricing|recovery\.service|services\/terminal\.ts|pty\.manager|web\/api\/routes\/(?:sessions|recovery|auth|work-items))/.test(path)
     );
     expect(forbidden).toEqual([]);
-    expect(serviceMigrationVersions).toEqual([1, 4, 5, 6, 7, 8, 10, 11, 12, 13]);
+    expect(serviceMigrationVersions).toEqual([1, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14]);
   });
 
   test('uses watchdog TERM then KILL and bounds captured child output', async () => {

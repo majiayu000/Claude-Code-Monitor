@@ -10,6 +10,9 @@ import {
   isKeeplineHookHealth,
   isHookReceiverRunning,
 } from '../adapters/hook/availability.js';
+import { resetDatabase } from '../db/migrations.js';
+import { closeDatabase } from '../infrastructure/database/sqlite.js';
+import { sessionRepository } from '../infrastructure/database/repositories/session.repository.js';
 
 const fixedNow = new Date('2026-07-02T15:30:00.000Z');
 
@@ -123,6 +126,7 @@ describe('hook server request security', () => {
       await server.close();
       server = null;
     }
+    closeDatabase();
   });
 
   function app(): FastifyInstance {
@@ -191,6 +195,37 @@ describe('hook server request security', () => {
     expect(body).toEqual({
       success: false,
       error: 'Invalid hook event payload',
+    });
+  });
+
+  test('creates complete session metadata when a tool event arrives first', async () => {
+    resetDatabase();
+    const response = await app().inject({
+      method: 'POST',
+      url: '/hook?runtime=codex',
+      headers: {
+        host: '127.0.0.1:7890',
+        'content-type': 'application/json',
+      },
+      payload: {
+        hook_event_name: 'PreToolUse',
+        session_id: '019d0b7e-6a75-7cb0-b4fa-41f927bf13d1',
+        cwd: '/tmp/tool-first-project',
+        tool_name: 'Read',
+        tool_input: { file_path: '/tmp/tool-first-project/README.md' },
+        timestamp: fixedNow.toISOString(),
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(sessionRepository.findBySessionId(
+      'codex_019d0b7e-6a75-7cb0-b4fa-41f927bf13d1'
+    )).toMatchObject({
+      client: 'codex',
+      directory: '/tmp/tool-first-project',
+      title: 'Unknown task',
+      status: 'running',
+      statusSource: 'hook',
     });
   });
 

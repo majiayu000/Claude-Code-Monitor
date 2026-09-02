@@ -6,6 +6,7 @@ import type { Entity } from '../shared/types.js';
 import type {
   AgentClient,
   SessionStatus,
+  SessionStatusSource,
   ToolCallInfo,
   SessionUsageStats,
 } from './value-objects.js';
@@ -23,6 +24,7 @@ export interface Session extends Entity {
 
   /** Current status */
   status: SessionStatus;
+  statusSource: SessionStatusSource;
 
   /** Task information */
   title: string;
@@ -95,6 +97,7 @@ export type SessionListItem = Pick<
   | 'client'
   | 'directory'
   | 'status'
+  | 'statusSource'
   | 'title'
   | 'startedAt'
   | 'lastActiveAt'
@@ -124,12 +127,14 @@ export interface CreateSessionInput {
   title?: string;
   pid?: number;
   tty?: string;
+  statusSource?: SessionStatusSource;
 }
 
 /** Input for updating an existing session */
 export interface UpdateSessionInput {
   directory?: string;
   status?: SessionStatus;
+  statusSource?: SessionStatusSource;
   title?: string;
   initialPrompt?: string;
   lastTool?: string;

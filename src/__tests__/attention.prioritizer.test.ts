@@ -18,6 +18,7 @@ function session(input: Partial<AggregatedSession> & {
     client: input.client ?? 'codex',
     directory: input.directory ?? process.cwd(),
     status: input.status,
+    statusSource: input.statusSource ?? 'scan',
     title: input.title ?? input.sessionId,
     initialPrompt: input.initialPrompt ?? '',
     lastTool: input.lastTool,

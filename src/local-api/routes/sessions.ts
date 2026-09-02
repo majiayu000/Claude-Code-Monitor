@@ -83,6 +83,7 @@ app.post('/:id/complete', (c) => {
   const session = sessionRepository.upsert({
     sessionId,
     status: 'completed',
+    statusSource: 'user',
     completedAt: new Date(),
     pid: undefined,
   });

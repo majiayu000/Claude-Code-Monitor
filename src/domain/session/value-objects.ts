@@ -10,6 +10,9 @@ export type SessionStatus =
   | 'lost'       // No process but session data exists
   | 'completed'; // Session finished
 
+/** Durable source of the currently accepted session status. */
+export type SessionStatusSource = 'scan' | 'hook' | 'user';
+
 /** All possible session statuses */
 export const SESSION_STATUSES: readonly SessionStatus[] = [
   'running',

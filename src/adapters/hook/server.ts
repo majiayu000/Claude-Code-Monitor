@@ -239,6 +239,7 @@ async function handleHookEvent(
       client: runtimeHint,
       directory: event.cwd,
       initialPrompt,
+      statusSource: 'hook',
     });
   };
 
@@ -246,6 +247,7 @@ async function handleHookEvent(
     case 'PreToolUse':
     case 'PostToolUse': {
       const toolEvent = event as ToolUseHookEvent;
+      ensureSession('Unknown task');
 
       // Emit tool event
       emit(event.event_type === 'PreToolUse' ? 'tool:pre' : 'tool:post', {
@@ -262,6 +264,7 @@ async function handleHookEvent(
         lastToolInput: JSON.stringify(toolEvent.tool_input),
         lastActiveAt: new Date(toolEvent.timestamp),
         status: 'running',
+        statusSource: 'hook',
       });
 
       // Extract current file if applicable
@@ -298,6 +301,7 @@ async function handleHookEvent(
       ensureSession('Unknown task');
       updateSession(sessionId, {
         status: 'running',
+        statusSource: 'hook',
         lastActiveAt: new Date(event.timestamp),
       });
       break;
@@ -306,6 +310,7 @@ async function handleHookEvent(
       // Claude finished one response turn. This is not evidence that the task completed.
       updateSession(sessionId, {
         status: 'waiting',
+        statusSource: 'hook',
         lastActiveAt: new Date(event.timestamp),
       });
       sessionFirstPrompts.delete(sessionId);
@@ -321,6 +326,7 @@ async function handleHookEvent(
       ensureSession(promptEvent.prompt);
       updateSession(sessionId, {
         status: 'running',
+        statusSource: 'hook',
         lastActiveAt: new Date(event.timestamp),
       });
 

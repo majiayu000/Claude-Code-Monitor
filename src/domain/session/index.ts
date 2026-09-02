@@ -24,6 +24,7 @@ export {
 export type {
   AgentClient,
   SessionStatus,
+  SessionStatusSource,
   ToolCallInfo,
   ProcessInfo,
   ClaudeSessionFile,

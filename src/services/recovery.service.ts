@@ -235,6 +235,7 @@ export class RecoveryService {
         this.repository.upsert({
           sessionId: options.sessionId,
           status: 'running',
+          statusSource: 'user',
         });
 
         emit('session:recovered', { session: this.repository.findBySessionId(options.sessionId)! });

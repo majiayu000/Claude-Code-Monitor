@@ -79,6 +79,7 @@ export class SessionService {
       initialPrompt: input.initialPrompt,
       title: input.title || generateTitle(input.initialPrompt),
       status: 'running',
+      statusSource: input.statusSource ?? 'scan',
       pid: input.pid,
       tty: input.tty,
       lastActiveAt: new Date(),
@@ -100,7 +101,7 @@ export class SessionService {
     // Explicit completion is durable. Live hooks and later scans may refresh
     // activity fields, but they cannot reopen a completed session implicitly.
     const safeInput = existing?.status === 'completed' && input.status !== 'completed'
-      ? { ...input, status: 'completed' as const }
+      ? { ...input, status: 'completed' as const, statusSource: existing.statusSource }
       : input;
 
     const session = this.repository.upsert({
@@ -220,6 +221,7 @@ export class SessionService {
         const hasNewerHookObservation = Boolean(
           existing &&
           process &&
+          existing.statusSource === 'hook' &&
           (existing.status === 'running' || existing.status === 'waiting') &&
           existing.lastActiveAt.getTime() > agentSession.lastActiveAt.getTime()
         );
@@ -247,6 +249,9 @@ export class SessionService {
             sessionId: agentSession.sessionId,
             client,
             status: nextStatus,
+            statusSource: existing.status === 'completed' || hasNewerHookObservation
+              ? existing.statusSource
+              : 'scan',
             ...(shouldUpdateTitle && {
               title: generateTitle(agentSession.firstMessage!),
               initialPrompt: agentSession.firstMessage,
@@ -289,6 +294,7 @@ export class SessionService {
             initialPrompt: agentSession.firstMessage || 'Unknown task',
             title,
             status,
+            statusSource: 'scan',
             lastTool: agentSession.lastTool,
             lastToolInput: agentSession.lastToolInput
               ? JSON.stringify(agentSession.lastToolInput)
@@ -323,6 +329,7 @@ export class SessionService {
             const lostSession = this.repository.upsert({
               sessionId: session.sessionId,
               status: 'lost',
+              statusSource: 'scan',
               pid: undefined,
             });
             lost++;
@@ -373,6 +380,7 @@ export class SessionService {
     this.repository.upsert({
       sessionId,
       status: 'completed',
+      statusSource: 'user',
       completedAt: new Date(),
       pid: undefined,
     });

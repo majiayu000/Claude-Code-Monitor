@@ -253,10 +253,11 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
             client: runtimeHint ?? 'claude',
             directory: body.cwd,
             status,
+            statusSource: 'hook',
             title: generateTitle(initialPrompt),
             initialPrompt,
             startedAt: new Date(),
-            lastActiveAt: new Date(),
+            lastActiveAt: eventTimestamp,
           });
           emit('session:discovered', { session: existing });
         }
@@ -276,7 +277,8 @@ export function startLifecycleReceiver(port: number): LifecycleReceiver {
           const session = sessionRepository.upsert({
             sessionId,
             status,
-            lastActiveAt: new Date(),
+            statusSource: 'hook',
+            lastActiveAt: eventTimestamp,
             ...(typeof body.tool_name === 'string' && { lastTool: body.tool_name }),
             ...(prompt && isGeneratedSessionTitle(existing.title) && {
               title: generateTitle(prompt),

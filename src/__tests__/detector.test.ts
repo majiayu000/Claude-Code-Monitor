@@ -50,9 +50,16 @@ function secondsAgo(seconds: number): Date {
 describe('Session Status Detection', () => {
   test('preserves a hook-derived waiting state while its process is alive', () => {
     expect(resolveAggregatedStatus(
-      { status: 'waiting', lastActiveAt: new Date() },
+      { status: 'waiting', statusSource: 'hook', lastActiveAt: new Date() },
       processInfo({ cpu: 10 })
     )).toBe('waiting');
+  });
+
+  test('recomputes a scan-derived status from current process evidence', () => {
+    expect(resolveAggregatedStatus(
+      { status: 'waiting', statusSource: 'scan', lastActiveAt: secondsAgo(60) },
+      processInfo({ cpu: 10 })
+    )).toBe('running');
   });
 
   describe('when process is not running', () => {
