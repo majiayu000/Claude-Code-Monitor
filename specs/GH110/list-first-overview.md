@@ -56,7 +56,9 @@ Scores, cost, and stale warnings do not move cards between lanes.
 
 ## Behavior
 
-- Preserve refresh, open, recover, stop, complete, and copy-ID actions.
+- Preserve refresh, open, recover, stop, and complete actions. Replace the
+  overview's copy-ID shortcut with the complete recovery command for sessions
+  that can actually be recovered.
 - `Open` switches to Sessions, filters to the selected session, and expands its
   full details immediately.
 - A recoverable lost session uses `Continue in terminal` as its primary action.
@@ -75,6 +77,29 @@ Scores, cost, and stale warnings do not move cards between lanes.
 - Preserve the existing API fields while adding the derived board lane.
 - Include completed sessions in the board response. Old lost sessions remain in
   Sessions history instead of flooding the operational board.
+
+## Review closure contract
+
+- Normalize Codex hook UUIDs to Keepline's canonical `codex_<uuid>` identity in
+  every hook receiver before repository lookup, persistence, or events.
+- Preserve a newer hook-derived `running` or `waiting` state in standalone and
+  service-backed reads while the matched process is alive. Replace generated
+  `Unknown task` metadata when the first real prompt arrives.
+- Resolve Codex hook files from `CODEX_HOME` when set, expose that Codex hook
+  trust is runtime-managed and must be verified, advertise Codex hook
+  capability, and accept receiver health only when the response carries
+  Keepline's lifecycle-receiver identity.
+- Show Stop only when a matched PID is available. Show recovery actions only
+  when the backend confirms at least one recovery method is currently valid.
+- Keep the board current from the existing session event stream. Do not display
+  a `Live` label for a one-shot snapshot.
+- Consume Overview-to-Sessions expansion only after the requested session is
+  loaded, and automatically open a collapsed group containing that session.
+- Keep overflow actions inside the visible lane, display resolved project
+  identity, and disclose when the 100-item board response is truncated.
+- Preserve meaningful text following image attachment tags. Board lane ordering
+  must not replace score ordering for the existing CLI attention queue.
+- Never render an overflow trigger without at least one available action.
 
 ## Verification
 
