@@ -34,7 +34,7 @@ export function AgentRow({
   const runtimeLabel = item.client === 'codex' ? 'Codex' : 'Claude Code'
   const task = formatTask(item)
   const currentState = formatCurrentState(item, task)
-  const project = projectName(item.directory)
+  const project = item.project.name
 
   return (
     <article
@@ -59,7 +59,7 @@ export function AgentRow({
       <p className={styles.currentState} title={currentState}>{currentState}</p>
 
       <div className={styles.cardFooter}>
-        <span className={styles.projectName} title={item.directory}>{project}</span>
+        <span className={styles.projectName} title={item.project.displayPath}>{project}</span>
         <RowActions
           item={item}
           onOpenSession={onOpenSession}
@@ -175,11 +175,6 @@ function formatCurrentState(item: OrchestratorQueueItem, task: string): string {
   return (item.context.lastTool ? `Using ${item.context.lastTool}` : '')
     || item.intent.nextAction?.trim()
     || 'No recent activity captured'
-}
-
-function projectName(directory: string): string {
-  const parts = directory.split('/').filter(Boolean)
-  return parts.at(-1) || directory || 'Unknown project'
 }
 
 function taskIdentity(item: OrchestratorQueueItem): string {

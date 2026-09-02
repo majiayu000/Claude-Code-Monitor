@@ -58,6 +58,7 @@ app.get('/overview', (c) => {
       highCostThreshold: highCostResult.value,
       staleHours: staleHoursResult.value,
       lostHours: lostHoursResult.value,
+      ordering: 'board',
       digests: getSessionDigestMap(sessions.map((session) => session.sessionId)),
     });
 

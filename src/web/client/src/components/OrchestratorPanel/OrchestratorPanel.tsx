@@ -63,7 +63,7 @@ export const OrchestratorPanel = memo(function OrchestratorPanel({
           </div>
           <div className={styles.meta}>
             {overview
-              ? `${overview.items.length} agents · updated ${formatRelativeTime(overview.generatedAt)}${scopeText}`
+              ? `${formatAgentCount(overview.items.length, stats.totalCandidates)} · updated ${formatRelativeTime(overview.generatedAt)}${scopeText}`
               : 'Waiting for overview'}
           </div>
         </div>
@@ -145,4 +145,8 @@ function groupItemsByLane(items: OrchestratorQueueItem[]): Map<AgentBoardLane, O
 function formatScopeText(hiddenOldLost: number, lostWindowHours?: number): string {
   if (hiddenOldLost === 0 || lostWindowHours == null) return ''
   return ` · ${hiddenOldLost} older lost in Sessions`
+}
+
+function formatAgentCount(visible: number, total: number): string {
+  return visible < total ? `${visible} of ${total} agents shown` : `${visible} agents`
 }

@@ -82,6 +82,13 @@ export interface OrchestratorQueueItem {
   status: SessionStatus
   title: string
   directory: string
+  project: {
+    id: string
+    rootPath: string
+    name: string
+    displayPath: string
+    source: 'git-root' | 'cwd' | 'unknown'
+  }
   lastActiveAt: string
   score: number
   reasons: OrchestratorReason[]

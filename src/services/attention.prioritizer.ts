@@ -3,6 +3,7 @@ import type { AgentClient, SessionStatus } from '../domain/session/index.js';
 import type { SerializableSessionDigest, SessionDigest } from '../domain/orchestrator/index.js';
 import { serializeSessionDigest } from '../domain/orchestrator/index.js';
 import type { AggregatedSession } from './session.types.js';
+import { resolveProjectIdentity, type ProjectIdentity } from './project.identity.js';
 
 export type AttentionReasonCode =
   | 'waiting_for_human'
@@ -79,6 +80,7 @@ export interface AttentionQueueItem {
   status: SessionStatus;
   title: string;
   directory: string;
+  project: ProjectIdentity;
   lastActiveAt: Date;
   score: number;
   reasons: AttentionReason[];
@@ -116,6 +118,7 @@ export interface AttentionOverviewOptions {
   includeOldLost?: boolean;
   lostHours?: number;
   digests?: Map<string, SessionDigest>;
+  ordering?: 'attention' | 'board';
 }
 
 export const DEFAULT_ATTENTION_LIMIT = 20;
@@ -162,7 +165,7 @@ export function buildAttentionOverview(
       staleCutoffMs,
       digest: options.digests?.get(session.sessionId),
     }))
-    .sort(compareAttentionItems)
+    .sort(options.ordering === 'board' ? compareBoardItems : compareAttentionItems)
     .map((item, index) => ({ ...item, rank: index + 1 }));
   const items = rankedItems.slice(0, limit);
 
@@ -260,6 +263,7 @@ function buildAttentionItem(
     status: session.status,
     title: session.title,
     directory: session.directory,
+    project: resolveProjectIdentity(session.directory),
     lastActiveAt: session.lastActiveAt,
     score: getPriorityScore(reasons),
     reasons,
@@ -339,13 +343,14 @@ function buildSessionIntent(
   digest?: SessionDigest
 ): AttentionIntent {
   const noiseFlags: AttentionIntentNoiseFlag[] = [];
-  const prompt = compactText(session.initialPrompt, MAX_ATTENTION_CONTEXT_LENGTH);
-  const promptIsNoise = isInstructionNoise(session.initialPrompt);
+  const promptText = stripImageAttachments(session.initialPrompt);
+  const prompt = compactText(promptText, MAX_ATTENTION_CONTEXT_LENGTH);
+  const promptIsNoise = isInstructionNoise(promptText);
   const titleIsNoise = isInstructionNoise(session.title);
   const digestIsNoise = isInstructionNoise(digest?.summary);
   if (promptIsNoise || titleIsNoise || digestIsNoise) noiseFlags.push('instructions_heavy');
 
-  const promptTask = promptIsNoise ? undefined : intentText(session.initialPrompt);
+  const promptTask = promptIsNoise ? undefined : intentText(promptText);
   const digestTask = digestIsNoise ? undefined : intentText(digest?.summary);
   const titleTask = titleIsNoise ? undefined : intentText(session.title);
   const lastMessage = intentText(session.lastMessage);
@@ -407,9 +412,8 @@ function isInstructionNoise(value: string | undefined): boolean {
   if (!value) return false;
   const compact = value.trim();
   const lower = compact.toLowerCase();
-  const withoutAttachments = compact
-    .replace(/<image\b[^>]*>/giu, '')
-    .trim();
+  const withoutAttachments = stripImageAttachments(compact) ?? '';
+  const hasUnclosedImageTag = lower.startsWith('<image ') && !compact.includes('>');
   return lower.includes('agents.md instructions') ||
     lower.startsWith('agents.md') ||
     lower.startsWith('# agents.md') ||
@@ -417,8 +421,13 @@ function isInstructionNoise(value: string | undefined): boolean {
     lower.includes('vibeguard-start') ||
     lower.includes('vibeguard') ||
     lower.includes('files called agents.md') ||
-    lower.startsWith('<image ') ||
+    hasUnclosedImageTag ||
     withoutAttachments.length === 0;
+}
+
+function stripImageAttachments(value: string | undefined): string | undefined {
+  const stripped = value?.replace(/<image\b[^>]*>/giu, '').trim();
+  return stripped || undefined;
 }
 
 function meaningfulTaskMessage(value: string | undefined): string | undefined {
@@ -517,7 +526,7 @@ function dedupeNoiseFlags(flags: AttentionIntentNoiseFlag[]): AttentionIntentNoi
   return [...new Set(flags)];
 }
 
-function compareAttentionItems(a: AttentionQueueItem, b: AttentionQueueItem): number {
+function compareBoardItems(a: AttentionQueueItem, b: AttentionQueueItem): number {
   const laneComparison = AGENT_BOARD_LANE_ORDER.indexOf(a.lane) -
     AGENT_BOARD_LANE_ORDER.indexOf(b.lane);
   if (laneComparison !== 0) return laneComparison;
@@ -527,6 +536,14 @@ function compareAttentionItems(a: AttentionQueueItem, b: AttentionQueueItem): nu
     if (b.status === 'waiting') return 1;
   }
 
+  const activityComparison = b.lastActiveAt.getTime() - a.lastActiveAt.getTime();
+  if (activityComparison !== 0) return activityComparison;
+  return a.sessionId.localeCompare(b.sessionId);
+}
+
+function compareAttentionItems(a: AttentionQueueItem, b: AttentionQueueItem): number {
+  const scoreComparison = b.score - a.score;
+  if (scoreComparison !== 0) return scoreComparison;
   const activityComparison = b.lastActiveAt.getTime() - a.lastActiveAt.getTime();
   if (activityComparison !== 0) return activityComparison;
   return a.sessionId.localeCompare(b.sessionId);

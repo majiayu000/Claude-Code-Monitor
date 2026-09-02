@@ -60,6 +60,7 @@ describe('buildAttentionOverview', () => {
       session({ sessionId: 'waiting', status: 'waiting' }),
     ], {
       includeCompleted: true,
+      ordering: 'board',
       now: NOW,
       highCostThreshold: 1,
       staleHours: 24,
@@ -118,6 +119,7 @@ describe('buildAttentionOverview', () => {
       }),
       session({ sessionId: 'waiting-only', status: 'waiting' }),
     ], {
+      ordering: 'board',
       now: NOW,
       highCostThreshold: 1,
       staleHours: 24,
@@ -257,6 +259,22 @@ describe('buildAttentionOverview', () => {
     });
   });
 
+  test('resolves nested working directories to their project root', () => {
+    const overview = buildAttentionOverview([
+      session({
+        sessionId: 'nested-project-session',
+        status: 'running',
+        directory: `${process.cwd()}/src/services`,
+      }),
+    ], { now: NOW });
+
+    expect(overview.items[0].project).toMatchObject({
+      rootPath: process.cwd(),
+      name: 'keepline-dense-overview',
+      source: 'git-root',
+    });
+  });
+
   test('truncates long context previews in the overview payload', () => {
     const overview = buildAttentionOverview([
       session({
@@ -335,6 +353,32 @@ describe('buildAttentionOverview', () => {
       taskSource: 'last_message',
       confidence: 'medium',
     });
+  });
+
+  test('keeps real task text that follows an image attachment', () => {
+    const overview = buildAttentionOverview([
+      session({
+        sessionId: 'image-with-task',
+        status: 'running',
+        initialPrompt: '<image name=[Image #1] path="/tmp/capture.png"> Fix the login button alignment',
+      }),
+    ], { now: NOW });
+
+    expect(overview.items[0].intent).toMatchObject({
+      task: 'Fix the login button alignment',
+      taskSource: 'initial_prompt',
+      confidence: 'high',
+    });
+    expect(overview.items[0].intent.noiseFlags).not.toContain('instructions_heavy');
+  });
+
+  test('keeps score-first ordering for the CLI by default', () => {
+    const overview = buildAttentionOverview([
+      session({ sessionId: 'finished', status: 'completed' }),
+      session({ sessionId: 'paused', status: 'idle' }),
+    ], { includeCompleted: true, now: NOW });
+
+    expect(overview.items.map((item) => item.sessionId)).toEqual(['paused', 'finished']);
   });
 
   test('skips low-information response openers when deriving intent', () => {
